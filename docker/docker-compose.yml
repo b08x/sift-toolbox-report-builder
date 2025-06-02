@@ -1,0 +1,29 @@
+services:
+  sift-toolbox:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.alt
+      args:
+        - VITE_GEMINI_API_KEY=${VITE_GEMINI_API_KEY}
+    ports:
+      - "3000:80"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    
+  # Development service (optional)
+  sift-toolbox-dev:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ..:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      - VITE_GEMINI_API_KEY=${VITE_GEMINI_API_KEY}
+    profiles:
+      - dev

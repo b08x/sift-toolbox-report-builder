@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from '@/App';
+// import '@/index.css'; // Removed as styles are handled by Tailwind CDN and inline styles
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
