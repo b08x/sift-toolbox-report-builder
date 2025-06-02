@@ -51,7 +51,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const envApiKey = typeof process !== 'undefined' && process.env && process.env.API_KEY ? process.env.API_KEY : '';
+    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
     if (envApiKey) {
       setApiKey(envApiKey);
       try {
@@ -68,7 +68,7 @@ const App: React.FC = () => {
         setAi(null);
       }
     } else {
-       setError("API Key (API_KEY environment variable) is not set or accessible for the primary provider. The application may not function correctly.");
+       setError("API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for the primary provider. The application may not function correctly.");
        setAi(null);
     }
   }, [selectedProviderKey]);
@@ -346,7 +346,7 @@ const App: React.FC = () => {
           <main className="w-full max-w-7xl mx-auto flex-grow flex flex-col p-4 sm:px-6 lg:px-8 py-6">
             {!apiKey && selectedProviderKey === AIProvider.GOOGLE_GEMINI && (
               <div className="p-4">
-                  <ErrorAlert message="Critical: API Key (API_KEY environment variable) is not set or accessible for Google Gemini. The application cannot function for this provider." />
+                  <ErrorAlert message="Critical: API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for Google Gemini. The application cannot function for this provider." />
               </div>
             )}
 
