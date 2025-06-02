@@ -1,6 +1,4 @@
 
-export const GEMINI_MODEL_NAME = 'gemini-2.5-flash-preview-04-17'; // General Text Tasks
-
 // Emojis as per SIFT document for potential use or if needed for UI consistency
 export const EMOJI_VERIFIED = "✅";
 export const EMOJI_ERROR = "⚠️";
