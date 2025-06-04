@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GoogleGenAI, Chat, Part, GenerateContentResponse, Content } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
@@ -26,6 +25,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>('');
+  const [configLoaded, setConfigLoaded] = useState<boolean>(false);
 
   const [selectedProviderKey, setSelectedProviderKey] = useState<AIProvider>(AIProvider.GOOGLE_GEMINI);
   const [selectedModelId, setSelectedModelId] = useState<string>('');
@@ -51,28 +51,112 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Handle runtime config loading timing
   useEffect(() => {
-    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-    if (envApiKey) {
+    // Check if runtime config is already available
+    if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG) {
+      console.log('🚀 Runtime config already available');
+      setConfigLoaded(true);
+      return;
+    }
+
+    // Listen for runtime config loaded event
+    const handleConfigLoaded = () => {
+      console.log('📡 Runtime config loaded event received');
+      setConfigLoaded(true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('runtime-config-loaded', handleConfigLoaded);
+    }
+
+    // Fallback: wait a bit and then check again
+    const fallbackTimer = setTimeout(() => {
+      console.log('⏱️ Fallback timer: checking for runtime config');
+      setConfigLoaded(true);
+    }, 1000);
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('runtime-config-loaded', handleConfigLoaded);
+      }
+      clearTimeout(fallbackTimer);
+    };
+  }, []);
+
+  // Main API key initialization effect
+  useEffect(() => {
+    // Don't proceed until we've given runtime config a chance to load
+    if (!configLoaded) {
+      console.log('⏳ Waiting for runtime configuration to load...');
+      return;
+    }
+
+    // Get API key with priority: Runtime Config > Vite Env
+    const getRuntimeApiKey = () => {
+      if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG?.VITE_GEMINI_API_KEY) {
+        return (window as any).RUNTIME_CONFIG.VITE_GEMINI_API_KEY;
+      }
+      return null;
+    };
+
+    const getViteApiKey = () => {
+      return import.meta.env.VITE_GEMINI_API_KEY || '';
+    };
+
+    // Try runtime config first (for Docker), then fallback to Vite env (for dev)
+    let envApiKey = getRuntimeApiKey() || getViteApiKey();
+    
+    console.log('🔍 API Key Debug (Post-Config Load):');
+    console.log('  Config loaded state:', configLoaded);
+    console.log('  Runtime config exists:', !!(typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG));
+    console.log('  Runtime API key:', getRuntimeApiKey() ? `${getRuntimeApiKey()?.substring(0, 10)}...` : 'none');
+    console.log('  Vite API key:', getViteApiKey() ? `${getViteApiKey()?.substring(0, 10)}...` : 'none');
+    console.log('  Final API key selected:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'none');
+    console.log('  Key is placeholder:', envApiKey === 'VITE_GEMINI_API_KEY_PLACEHOLDER');
+    
+    // Validate API key
+    const isValidKey = envApiKey && 
+                      envApiKey.trim() !== '' && 
+                      envApiKey !== 'VITE_GEMINI_API_KEY_PLACEHOLDER' && 
+                      envApiKey !== 'NOT_SET';
+
+    if (isValidKey) {
       setApiKey(envApiKey);
       try {
         if (selectedProviderKey === AIProvider.GOOGLE_GEMINI) {
-          const genAI = new GoogleGenAI({ apiKey: envApiKey }); // Use the retrieved key
+          const genAI = new GoogleGenAI({ apiKey: envApiKey });
           setAi(genAI);
+          setError(null); // Clear any previous errors
+          console.log('✅ Google Gemini API client initialized successfully');
         } else {
           setError("Selected provider is not yet supported for API client initialization.");
           setAi(null);
         }
       } catch (e: any) {
         setError(`Failed to initialize API for ${selectedProviderKey}: ${e.message}. Ensure API key is valid.`);
-        console.error("API Initialization Error:", e);
+        console.error("❌ API Initialization Error:", e);
         setAi(null);
       }
     } else {
-       setError("API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for the primary provider. The application may not function correctly."); // Updated error message
-       setAi(null);
+      // Determine specific error message
+      let errorMessage = "API Key not available.";
+      
+      if (envApiKey === 'VITE_GEMINI_API_KEY_PLACEHOLDER') {
+        errorMessage = "API Key placeholder was not replaced during Docker startup. Check that GEMINI_API_KEY environment variable is set when running the container.";
+      } else if (envApiKey === 'NOT_SET') {
+        errorMessage = "GEMINI_API_KEY environment variable was not provided to the Docker container.";
+      } else if (!envApiKey || envApiKey.trim() === '') {
+        errorMessage = "No API key found. In Docker, ensure GEMINI_API_KEY environment variable is provided. In development, set VITE_GEMINI_API_KEY in your .env file.";
+      } else {
+        errorMessage = "API key found but appears to be invalid.";
+      }
+      
+      setError(errorMessage);
+      setAi(null);
+      console.error('❌ API Key Error:', errorMessage);
     }
-  }, [selectedProviderKey]);
+  }, [selectedProviderKey, configLoaded]);
 
   const getSiftInstructionsForReportType = (type: ReportType): string => {
     switch (type) {
