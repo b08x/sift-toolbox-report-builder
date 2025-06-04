@@ -8,7 +8,7 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorAlert } from './components/ErrorAlert';
 import { ChatInterface } from './components/ChatInterface';
 import { Sidebar } from './components/Sidebar';
-import { UserQueryPanel } from './components/UserQueryPanel'; // New component
+import { UserQueryPanel } from './components/UserQueryPanel'; 
 import { ReportType, ChatMessage, GroundingChunk, AIProvider, AIModelConfig, ConfigurableParams, ModelParameter, CurrentSiftQueryDetails } from './types';
 import { SIFT_ICON } from './constants';
 import { SIFT_CHAT_SYSTEM_PROMPT, SIFT_FULL_CHECK_PROMPT, SIFT_CONTEXT_REPORT_PROMPT, SIFT_COMMUNITY_NOTE_PROMPT } from './prompts';
@@ -34,6 +34,7 @@ const App: React.FC = () => {
   const [currentSiftQueryDetails, setCurrentSiftQueryDetails] = useState<CurrentSiftQueryDetails | null>(null);
 
   const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
+  const isStoppingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (AVAILABLE_PROVIDERS_MODELS.length > 0) {
@@ -56,11 +57,11 @@ const App: React.FC = () => {
       setApiKey(envApiKey);
       try {
         if (selectedProviderKey === AIProvider.GOOGLE_GEMINI) {
-          const genAI = new GoogleGenAI({ apiKey: envApiKey });
+          const genAI = new GoogleGenAI({ apiKey: envApiKey }); // Use the retrieved key
           setAi(genAI);
         } else {
           setError("Selected provider is not yet supported for API client initialization.");
-          setAi(null); // Ensure AI client is null for unsupported providers
+          setAi(null);
         }
       } catch (e: any) {
         setError(`Failed to initialize API for ${selectedProviderKey}: ${e.message}. Ensure API key is valid.`);
@@ -68,7 +69,7 @@ const App: React.FC = () => {
         setAi(null);
       }
     } else {
-       setError("API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for the primary provider. The application may not function correctly.");
+       setError("API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for the primary provider. The application may not function correctly."); // Updated error message
        setAi(null);
     }
   }, [selectedProviderKey]);
@@ -86,6 +87,7 @@ const App: React.FC = () => {
   };
 
   const handleClearChatAndReset = useCallback(() => {
+    isStoppingRef.current = true; // Stop any ongoing generation
     setChatMessages([]);
     setChatSession(null);
     setUserInputText('');
@@ -93,6 +95,31 @@ const App: React.FC = () => {
     setCurrentSiftQueryDetails(null); 
     setError(null);
     setIsLoading(false);
+    // Ensure isStoppingRef is reset if a new operation starts later
+    setTimeout(() => isStoppingRef.current = false, 0);
+  }, []);
+
+  const handleStopGeneration = useCallback(() => {
+    isStoppingRef.current = true;
+    setIsLoading(false);
+    setError(null); // Clear any errors when stopping
+    setChatMessages(prev => {
+      if (prev.length === 0) return prev;
+      const lastMessageIndex = prev.length - 1;
+      if (prev[lastMessageIndex]?.sender === 'ai' && prev[lastMessageIndex]?.isLoading) {
+        return prev.map((msg, index) => 
+          index === lastMessageIndex 
+          ? { 
+              ...msg, 
+              text: (msg.text && msg.text.trim() !== '') ? msg.text + "\n\n--- Generation stopped by user. ---" : "Generation stopped by user.", 
+              isLoading: false, 
+              isError: false 
+            } 
+          : msg
+        );
+      }
+      return prev;
+    });
   }, []);
 
   const handleStartChat = useCallback(async () => {
@@ -109,6 +136,7 @@ const App: React.FC = () => {
       return;
     }
 
+    isStoppingRef.current = false; // Reset stop flag for new operation
     setIsLoading(true);
     setError(null);
     setChatMessages([]); 
@@ -137,7 +165,7 @@ const App: React.FC = () => {
         console.error('Failed to process image file:', err);
         setError('Failed to process image file. Please try another image or check the console.');
         setIsLoading(false);
-        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl); // Clean up preview URL
+        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl); 
         return;
       }
     }
@@ -220,6 +248,7 @@ const App: React.FC = () => {
       let currentGroundingSources: GroundingChunk[] | undefined = undefined;
 
       for await (const chunk of resultStream) {
+        if (isStoppingRef.current) break;
         currentText += chunk.text; 
         currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
             web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
@@ -229,20 +258,31 @@ const App: React.FC = () => {
           msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
         ));
       }
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-      ));
+
+      if (isStoppingRef.current) {
+        // Message update handled by handleStopGeneration
+      } else {
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
+        ));
+      }
     } catch (err: any) {
-      console.error("Error in initial chat message:", err);
-      const errorMessage = err.message || 'An unexpected error occurred while generating the initial report.';
-      setError(errorMessage);
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true } : msg
-      ));
+      if (!isStoppingRef.current) {
+        console.error("Error in initial chat message:", err);
+        const errorMessage = err.message || 'An unexpected error occurred while generating the initial report.';
+        setError(errorMessage);
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true } : msg
+        ));
+      } else {
+        console.warn("Stream error during stop:", err);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isStoppingRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [ai, userInputText, userImageFile, reportType, selectedModelId, modelConfigParams, selectedProviderKey, getSiftInstructionsForReportType]);
+  }, [ai, userInputText, userImageFile, reportType, selectedModelId, modelConfigParams, selectedProviderKey, getSiftInstructionsForReportType, handleStopGeneration]);
 
 
   const handleSendChatMessage = useCallback(async (messageText: string, command?: 'another round' | 'read the room') => {
@@ -256,6 +296,7 @@ const App: React.FC = () => {
 
     const textToSend = command ? command : messageText;
 
+    isStoppingRef.current = false; // Reset stop flag
     setIsLoading(true);
     setError(null);
 
@@ -285,6 +326,7 @@ const App: React.FC = () => {
       let currentGroundingSources: GroundingChunk[] | undefined = undefined;
 
       for await (const chunk of resultStream) {
+        if (isStoppingRef.current) break;
         currentText += chunk.text; 
         currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
             web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
@@ -294,20 +336,31 @@ const App: React.FC = () => {
           msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
         ));
       }
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-      ));
+      
+      if (isStoppingRef.current) {
+        // Message update handled by handleStopGeneration
+      } else {
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
+        ));
+      }
     } catch (err: any) {
-      console.error("Error in chat message:", err);
-      const errorMessageText = err.message || 'An unexpected error occurred while sending the chat message.';
-      setError(errorMessageText); 
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessageText}`, isLoading: false, isError: true } : msg
-      ));
+      if (!isStoppingRef.current) {
+        console.error("Error in chat message:", err);
+        const errorMessageText = err.message || 'An unexpected error occurred while sending the chat message.';
+        setError(errorMessageText); 
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessageText}`, isLoading: false, isError: true } : msg
+        ));
+      } else {
+         console.warn("Stream error during stop:", err);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isStoppingRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [chatSession, ai, selectedModelId, selectedProviderKey]);
+  }, [chatSession, ai, selectedModelId, selectedProviderKey, handleStopGeneration]);
 
 
   useEffect(() => {
@@ -362,6 +415,7 @@ const App: React.FC = () => {
                   onStartChat={handleStartChat}
                   isLoading={isLoading}
                   isChatActive={isChatActive}
+                  onStopGeneration={handleStopGeneration}
                 />
               </div>
             )}
@@ -382,6 +436,7 @@ const App: React.FC = () => {
                 messages={chatMessages}
                 onSendMessage={handleSendChatMessage}
                 isLoading={isLoading} 
+                onStopGeneration={handleStopGeneration}
                 ref={chatMessagesContainerRef}
               />
             )}
