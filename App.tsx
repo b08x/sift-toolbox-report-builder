@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GoogleGenAI, Chat, Part, GenerateContentResponse, Content } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
@@ -8,7 +7,7 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorAlert } from './components/ErrorAlert';
 import { ChatInterface } from './components/ChatInterface';
 import { Sidebar } from './components/Sidebar';
-import { UserQueryPanel } from './components/UserQueryPanel'; // New component
+import { UserQueryPanel } from './components/UserQueryPanel'; 
 import { ReportType, ChatMessage, GroundingChunk, AIProvider, AIModelConfig, ConfigurableParams, ModelParameter, CurrentSiftQueryDetails } from './types';
 import { SIFT_ICON } from './constants';
 import { SIFT_CHAT_SYSTEM_PROMPT, SIFT_FULL_CHECK_PROMPT, SIFT_CONTEXT_REPORT_PROMPT, SIFT_COMMUNITY_NOTE_PROMPT } from './prompts';
@@ -26,6 +25,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string>('');
+  const [configLoaded, setConfigLoaded] = useState<boolean>(false);
 
   const [selectedProviderKey, setSelectedProviderKey] = useState<AIProvider>(AIProvider.GOOGLE_GEMINI);
   const [selectedModelId, setSelectedModelId] = useState<string>('');
@@ -34,6 +34,7 @@ const App: React.FC = () => {
   const [currentSiftQueryDetails, setCurrentSiftQueryDetails] = useState<CurrentSiftQueryDetails | null>(null);
 
   const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
+  const isStoppingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (AVAILABLE_PROVIDERS_MODELS.length > 0) {
@@ -50,28 +51,112 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Handle runtime config loading timing
   useEffect(() => {
-    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-    if (envApiKey) {
+    // Check if runtime config is already available
+    if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG) {
+      console.log('🚀 Runtime config already available');
+      setConfigLoaded(true);
+      return;
+    }
+
+    // Listen for runtime config loaded event
+    const handleConfigLoaded = () => {
+      console.log('📡 Runtime config loaded event received');
+      setConfigLoaded(true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('runtime-config-loaded', handleConfigLoaded);
+    }
+
+    // Fallback: wait a bit and then check again
+    const fallbackTimer = setTimeout(() => {
+      console.log('⏱️ Fallback timer: checking for runtime config');
+      setConfigLoaded(true);
+    }, 1000);
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('runtime-config-loaded', handleConfigLoaded);
+      }
+      clearTimeout(fallbackTimer);
+    };
+  }, []);
+
+  // Main API key initialization effect
+  useEffect(() => {
+    // Don't proceed until we've given runtime config a chance to load
+    if (!configLoaded) {
+      console.log('⏳ Waiting for runtime configuration to load...');
+      return;
+    }
+
+    // Get API key with priority: Runtime Config > Vite Env
+    const getRuntimeApiKey = () => {
+      if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG?.VITE_GEMINI_API_KEY) {
+        return (window as any).RUNTIME_CONFIG.VITE_GEMINI_API_KEY;
+      }
+      return null;
+    };
+
+    const getViteApiKey = () => {
+      return import.meta.env.VITE_GEMINI_API_KEY || '';
+    };
+
+    // Try runtime config first (for Docker), then fallback to Vite env (for dev)
+    let envApiKey = getRuntimeApiKey() || getViteApiKey();
+    
+    console.log('🔍 API Key Debug (Post-Config Load):');
+    console.log('  Config loaded state:', configLoaded);
+    console.log('  Runtime config exists:', !!(typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG));
+    console.log('  Runtime API key:', getRuntimeApiKey() ? `${getRuntimeApiKey()?.substring(0, 10)}...` : 'none');
+    console.log('  Vite API key:', getViteApiKey() ? `${getViteApiKey()?.substring(0, 10)}...` : 'none');
+    console.log('  Final API key selected:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'none');
+    console.log('  Key is placeholder:', envApiKey === 'VITE_GEMINI_API_KEY_PLACEHOLDER');
+    
+    // Validate API key
+    const isValidKey = envApiKey && 
+                      envApiKey.trim() !== '' && 
+                      envApiKey !== 'VITE_GEMINI_API_KEY_PLACEHOLDER' && 
+                      envApiKey !== 'NOT_SET';
+
+    if (isValidKey) {
       setApiKey(envApiKey);
       try {
         if (selectedProviderKey === AIProvider.GOOGLE_GEMINI) {
           const genAI = new GoogleGenAI({ apiKey: envApiKey });
           setAi(genAI);
+          setError(null); // Clear any previous errors
+          console.log('✅ Google Gemini API client initialized successfully');
         } else {
           setError("Selected provider is not yet supported for API client initialization.");
-          setAi(null); // Ensure AI client is null for unsupported providers
+          setAi(null);
         }
       } catch (e: any) {
         setError(`Failed to initialize API for ${selectedProviderKey}: ${e.message}. Ensure API key is valid.`);
-        console.error("API Initialization Error:", e);
+        console.error("❌ API Initialization Error:", e);
         setAi(null);
       }
     } else {
-       setError("API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for the primary provider. The application may not function correctly.");
-       setAi(null);
+      // Determine specific error message
+      let errorMessage = "API Key not available.";
+      
+      if (envApiKey === 'VITE_GEMINI_API_KEY_PLACEHOLDER') {
+        errorMessage = "API Key placeholder was not replaced during Docker startup. Check that GEMINI_API_KEY environment variable is set when running the container.";
+      } else if (envApiKey === 'NOT_SET') {
+        errorMessage = "GEMINI_API_KEY environment variable was not provided to the Docker container.";
+      } else if (!envApiKey || envApiKey.trim() === '') {
+        errorMessage = "No API key found. In Docker, ensure GEMINI_API_KEY environment variable is provided. In development, set VITE_GEMINI_API_KEY in your .env file.";
+      } else {
+        errorMessage = "API key found but appears to be invalid.";
+      }
+      
+      setError(errorMessage);
+      setAi(null);
+      console.error('❌ API Key Error:', errorMessage);
     }
-  }, [selectedProviderKey]);
+  }, [selectedProviderKey, configLoaded]);
 
   const getSiftInstructionsForReportType = (type: ReportType): string => {
     switch (type) {
@@ -86,6 +171,7 @@ const App: React.FC = () => {
   };
 
   const handleClearChatAndReset = useCallback(() => {
+    isStoppingRef.current = true; // Stop any ongoing generation
     setChatMessages([]);
     setChatSession(null);
     setUserInputText('');
@@ -93,6 +179,31 @@ const App: React.FC = () => {
     setCurrentSiftQueryDetails(null); 
     setError(null);
     setIsLoading(false);
+    // Ensure isStoppingRef is reset if a new operation starts later
+    setTimeout(() => isStoppingRef.current = false, 0);
+  }, []);
+
+  const handleStopGeneration = useCallback(() => {
+    isStoppingRef.current = true;
+    setIsLoading(false);
+    setError(null); // Clear any errors when stopping
+    setChatMessages(prev => {
+      if (prev.length === 0) return prev;
+      const lastMessageIndex = prev.length - 1;
+      if (prev[lastMessageIndex]?.sender === 'ai' && prev[lastMessageIndex]?.isLoading) {
+        return prev.map((msg, index) => 
+          index === lastMessageIndex 
+          ? { 
+              ...msg, 
+              text: (msg.text && msg.text.trim() !== '') ? msg.text + "\n\n--- Generation stopped by user. ---" : "Generation stopped by user.", 
+              isLoading: false, 
+              isError: false 
+            } 
+          : msg
+        );
+      }
+      return prev;
+    });
   }, []);
 
   const handleStartChat = useCallback(async () => {
@@ -109,6 +220,7 @@ const App: React.FC = () => {
       return;
     }
 
+    isStoppingRef.current = false; // Reset stop flag for new operation
     setIsLoading(true);
     setError(null);
     setChatMessages([]); 
@@ -137,7 +249,7 @@ const App: React.FC = () => {
         console.error('Failed to process image file:', err);
         setError('Failed to process image file. Please try another image or check the console.');
         setIsLoading(false);
-        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl); // Clean up preview URL
+        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl); 
         return;
       }
     }
@@ -220,6 +332,7 @@ const App: React.FC = () => {
       let currentGroundingSources: GroundingChunk[] | undefined = undefined;
 
       for await (const chunk of resultStream) {
+        if (isStoppingRef.current) break;
         currentText += chunk.text; 
         currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
             web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
@@ -229,20 +342,31 @@ const App: React.FC = () => {
           msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
         ));
       }
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-      ));
+
+      if (isStoppingRef.current) {
+        // Message update handled by handleStopGeneration
+      } else {
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
+        ));
+      }
     } catch (err: any) {
-      console.error("Error in initial chat message:", err);
-      const errorMessage = err.message || 'An unexpected error occurred while generating the initial report.';
-      setError(errorMessage);
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true } : msg
-      ));
+      if (!isStoppingRef.current) {
+        console.error("Error in initial chat message:", err);
+        const errorMessage = err.message || 'An unexpected error occurred while generating the initial report.';
+        setError(errorMessage);
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true } : msg
+        ));
+      } else {
+        console.warn("Stream error during stop:", err);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isStoppingRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [ai, userInputText, userImageFile, reportType, selectedModelId, modelConfigParams, selectedProviderKey, getSiftInstructionsForReportType]);
+  }, [ai, userInputText, userImageFile, reportType, selectedModelId, modelConfigParams, selectedProviderKey, getSiftInstructionsForReportType, handleStopGeneration]);
 
 
   const handleSendChatMessage = useCallback(async (messageText: string, command?: 'another round' | 'read the room') => {
@@ -256,6 +380,7 @@ const App: React.FC = () => {
 
     const textToSend = command ? command : messageText;
 
+    isStoppingRef.current = false; // Reset stop flag
     setIsLoading(true);
     setError(null);
 
@@ -285,6 +410,7 @@ const App: React.FC = () => {
       let currentGroundingSources: GroundingChunk[] | undefined = undefined;
 
       for await (const chunk of resultStream) {
+        if (isStoppingRef.current) break;
         currentText += chunk.text; 
         currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
             web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
@@ -294,20 +420,31 @@ const App: React.FC = () => {
           msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
         ));
       }
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-      ));
+      
+      if (isStoppingRef.current) {
+        // Message update handled by handleStopGeneration
+      } else {
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
+        ));
+      }
     } catch (err: any) {
-      console.error("Error in chat message:", err);
-      const errorMessageText = err.message || 'An unexpected error occurred while sending the chat message.';
-      setError(errorMessageText); 
-      setChatMessages(prev => prev.map(msg => 
-        msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessageText}`, isLoading: false, isError: true } : msg
-      ));
+      if (!isStoppingRef.current) {
+        console.error("Error in chat message:", err);
+        const errorMessageText = err.message || 'An unexpected error occurred while sending the chat message.';
+        setError(errorMessageText); 
+        setChatMessages(prev => prev.map(msg => 
+          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessageText}`, isLoading: false, isError: true } : msg
+        ));
+      } else {
+         console.warn("Stream error during stop:", err);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isStoppingRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [chatSession, ai, selectedModelId, selectedProviderKey]);
+  }, [chatSession, ai, selectedModelId, selectedProviderKey, handleStopGeneration]);
 
 
   useEffect(() => {
@@ -362,6 +499,7 @@ const App: React.FC = () => {
                   onStartChat={handleStartChat}
                   isLoading={isLoading}
                   isChatActive={isChatActive}
+                  onStopGeneration={handleStopGeneration}
                 />
               </div>
             )}
@@ -382,6 +520,7 @@ const App: React.FC = () => {
                 messages={chatMessages}
                 onSendMessage={handleSendChatMessage}
                 isLoading={isLoading} 
+                onStopGeneration={handleStopGeneration}
                 ref={chatMessagesContainerRef}
               />
             )}
