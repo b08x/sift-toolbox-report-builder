@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, forwardRef } from 'react';
 import { ChatMessage } from '../types';
 import { ChatMessageItem } from './ChatMessageItem';
@@ -6,10 +7,11 @@ import { ChatInputArea } from './ChatInputArea';
 interface ChatInterfaceProps {
   messages: ChatMessage[];
   onSendMessage: (messageText: string, command?: 'another round' | 'read the room') => void;
-  isLoading: boolean; // For new messages being sent
+  isLoading: boolean; 
+  onStopGeneration?: () => void; // New prop for stopping
 }
 
-export const ChatInterface = forwardRef<HTMLDivElement, ChatInterfaceProps>(({ messages, onSendMessage, isLoading }, ref) => {
+export const ChatInterface = forwardRef<HTMLDivElement, ChatInterfaceProps>(({ messages, onSendMessage, isLoading, onStopGeneration }, ref) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,7 +30,11 @@ export const ChatInterface = forwardRef<HTMLDivElement, ChatInterfaceProps>(({ m
 
       {/* Chat Input Area */}
       <div className="shrink-0 p-3 sm:p-4 border-t border-slate-700 bg-slate-800">
-        <ChatInputArea onSendMessage={onSendMessage} isLoading={isLoading} />
+        <ChatInputArea 
+            onSendMessage={onSendMessage} 
+            isLoading={isLoading} 
+            onStopGeneration={onStopGeneration} 
+        />
       </div>
     </div>
   );
