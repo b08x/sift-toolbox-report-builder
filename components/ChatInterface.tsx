@@ -7,11 +7,13 @@ import { ChatInputArea } from './ChatInputArea';
 interface ChatInterfaceProps {
   messages: ChatMessage[];
   onSendMessage: (messageText: string, command?: 'another round' | 'read the room') => void;
-  isLoading: boolean; 
-  onStopGeneration?: () => void; // New prop for stopping
+  isLoading: boolean;
+  onStopGeneration?: () => void;
+  onRestartGeneration?: () => void; // New prop for restarting
+  canRestart?: boolean; // New prop to enable/disable restart button
 }
 
-export const ChatInterface = forwardRef<HTMLDivElement, ChatInterfaceProps>(({ messages, onSendMessage, isLoading, onStopGeneration }, ref) => {
+export const ChatInterface = forwardRef<HTMLDivElement, ChatInterfaceProps>(({ messages, onSendMessage, isLoading, onStopGeneration, onRestartGeneration, canRestart }, ref) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,9 +33,11 @@ export const ChatInterface = forwardRef<HTMLDivElement, ChatInterfaceProps>(({ m
       {/* Chat Input Area */}
       <div className="shrink-0 p-3 sm:p-4 border-t border-slate-700 bg-slate-800">
         <ChatInputArea 
-            onSendMessage={onSendMessage} 
-            isLoading={isLoading} 
-            onStopGeneration={onStopGeneration} 
+            onSendMessage={onSendMessage}
+            isLoading={isLoading}
+            onStopGeneration={onStopGeneration}
+            onRestartGeneration={onRestartGeneration}
+            canRestart={canRestart}
         />
       </div>
     </div>

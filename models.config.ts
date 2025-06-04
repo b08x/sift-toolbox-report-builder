@@ -41,13 +41,13 @@ export const AVAILABLE_PROVIDERS_MODELS: AIModelConfig[] = [
     ],
   },
   // Add more Gemini models here if desired
-  // {
-  //   id: 'another-gemini-model',
-  //   name: 'Another Gemini Model',
-  //   provider: AIProvider.GOOGLE_GEMINI,
-  //   supportsGoogleSearch: false,
-  //   parameters: [
-  //     { key: 'temperature', label: 'Temperature', type: 'slider', min: 0, max: 2, step: 0.1, defaultValue: 0.8 },
-  //   ],
-  // }
+  {
+    id: 'learnlm-2.0-flash-experimental',
+    name: 'LearnLM 2.0 Flash (Experimental)',
+    provider: AIProvider.GOOGLE_GEMINI,
+    supportsGoogleSearch: false,
+    parameters: [
+      { key: 'temperature', label: 'Temperature', type: 'slider', min: 0, max: 2, step: 0.1, defaultValue: 0.8 },
+    ],
+  }
 ];

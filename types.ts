@@ -49,6 +49,13 @@ export interface CurrentSiftQueryDetails {
     reportType: ReportType;
 }
 
+export interface OriginalQueryInfo {
+  text?: string;
+  imageMimeType?: string | null;
+  imageBase64?: string | null;
+  reportType: ReportType;
+}
+
 // New types for model selection and parameters
 export enum AIProvider {
   GOOGLE_GEMINI = 'GOOGLE_GEMINI',
