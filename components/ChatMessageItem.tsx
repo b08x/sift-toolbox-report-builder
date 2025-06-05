@@ -57,6 +57,19 @@ const parseSiftFullCheckReport = (markdownText: string): ParsedReportSection[] =
   return sections.filter(s => s.content.trim() !== '' || s.title === "Report Information");
 };
 
+const downloadMarkdown = (content: string, filename: string) => {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => {
   const { sender, text, timestamp, isLoading, isError, groundingSources, imagePreviewUrl, modelId, isInitialSIFTReport, originalQueryReportType } = message;
@@ -67,6 +80,43 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => 
       .then(() => alert('Message content copied to clipboard!'))
       .catch(err => console.error('Failed to copy message: ', err));
   };
+
+  const handleExportReport = () => {
+    if (!isInitialSIFTReport || !originalQueryReportType || !text) return;
+
+    const reportDate = new Date(timestamp);
+    const displayDate = reportDate.toLocaleString();
+    const filenameDate = reportDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const reportTypeSanitized = originalQueryReportType.replace(/\s+/g, '_');
+    const filename = `SIFT_Report_${reportTypeSanitized}_${filenameDate}.md`;
+
+    let groundingSourcesText = '**Grounding Sources:** N/A';
+    if (groundingSources && groundingSources.length > 0) {
+        const sourcesList = groundingSources
+            .filter(s => s.web && s.web.uri)
+            .map(s => `  - [${s.web?.title || s.web?.uri}](${s.web?.uri})`)
+            .join('\n');
+        if (sourcesList) {
+            groundingSourcesText = `**Grounding Sources:**\n${sourcesList}`;
+        }
+    }
+    
+    const metadataHeader = `\
+# SIFT Report Export
+
+**Generated:** ${displayDate}
+**Report Type:** ${originalQueryReportType}
+**Model Used:** ${modelId || 'N/A'}
+${groundingSourcesText}
+---
+
+`;
+    const fullMarkdownContent = metadataHeader + text;
+
+    downloadMarkdown(fullMarkdownContent, filename);
+  };
+
 
   const renderContent = () => {
     if (isInitialSIFTReport && originalQueryReportType === ReportType.FULL_CHECK && !isError && !isLoading) {
@@ -165,6 +215,22 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => 
                 )
               ))}
             </ul>
+          </div>
+        )}
+
+        {!isUser && isInitialSIFTReport && !isLoading && !isError && text.trim() && (
+          <div className="mt-3 pt-3 border-t border-slate-600">
+            <button
+              onClick={handleExportReport}
+              className="inline-flex items-center px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-700 focus:ring-emerald-500 transition-colors"
+              aria-label="Export SIFT report as Markdown"
+              title="Export SIFT report as Markdown"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Export Report
+            </button>
           </div>
         )}
         
