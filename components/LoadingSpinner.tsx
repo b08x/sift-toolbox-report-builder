@@ -1,7 +1,17 @@
 
 import React from 'react';
+import { ReportType } from '../types'; // Import ReportType
 
-export const LoadingSpinner: React.FC = () => {
+interface LoadingSpinnerProps {
+  reportType: ReportType;
+  onTimeout: () => void;
+  // We are not using these props in the component's rendering logic for now,
+  // but they are defined to match the props passed in App.tsx
+}
+
+export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ reportType, onTimeout }) => {
+  // TODO: Optionally use reportType to customize the message, e.g., "Generating {reportType} Report..."
+  // TODO: Implement timeout logic using onTimeout if needed, though App.tsx seems to handle it externally.
   return (
     <div className="flex flex-col items-center justify-center my-10 p-6 bg-slate-700/50 rounded-lg">
       <svg className="animate-spin h-12 w-12 text-sky-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
