@@ -99,7 +99,10 @@ The SIFT method is a quick, simple approach to evaluating information online, he
 3. Create a `.env` file in the root directory:
 
    ```env
-   VITE_GEMINI_API_KEY=your_api_key_here
+   VITE_GEMINI_API_KEY=your_gemini_api_key_here
+   # Optional:
+   # VITE_OPENAI_API_KEY=your_openai_api_key_here
+   # VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
    ```
 
 4. Run the development server:
@@ -116,10 +119,19 @@ The SIFT method is a quick, simple approach to evaluating information online, he
 
    ```bash
    # With environment variable
-   GEMINI_API_KEY=your_api_key_here docker-compose up
+   # Example for one key:
+   # GEMINI_API_KEY=your_api_key_here docker-compose up
+   # Example for multiple keys (if using OpenAI and/or OpenRouter):
+   GEMINI_API_KEY=your_gemini_api_key OPENAI_API_KEY=your_openai_key OPENROUTER_API_KEY=your_openrouter_key docker-compose up
 
    # Or using .env file
-   echo "GEMINI_API_KEY=your_api_key_here" > .env
+   # Create or update your .env file in the project root with lines like:
+   # GEMINI_API_KEY=your_gemini_api_key_here
+   # # Optional:
+   # # OPENAI_API_KEY=your_openai_api_key_here
+   # # OPENROUTER_API_KEY=your_openrouter_api_key_here
+   #
+   # Then run:
    docker-compose up
    ```
 
@@ -132,14 +144,14 @@ The SIFT method is a quick, simple approach to evaluating information online, he
 docker build -f docker/Dockerfile -t sift-toolbox .
 
 # Run the container
-docker run -p 3000:80 -e GEMINI_API_KEY=your_api_key_here sift-toolbox
+docker run -p 3000:80 -e GEMINI_API_KEY=your_gemini_api_key_here -e OPENAI_API_KEY=your_openai_key -e OPENROUTER_API_KEY=your_openrouter_key sift-toolbox
 ```
 
 ## Technical Stack
 
 - **Frontend**: React 19 with TypeScript
 - **Styling**: Tailwind CSS (via CDN)
-- **AI Integration**: Google Gemini API (gemini-2.5-flash-preview-04-17)
+- **AI Integration**: Google Gemini API, OpenAI API, and OpenRouter (accessing a diverse range of models including Google's Gemini series, OpenAI's GPT series, Anthropic's Claude, Microsoft's Phi, and more).
 - **Build Tool**: Vite
 - **Containerization**: Docker with Nginx
 - **Chat Management**: Custom implementation with streaming support
@@ -158,7 +170,11 @@ docker run -p 3000:80 -e GEMINI_API_KEY=your_api_key_here sift-toolbox
 ### Environment Variables
 
 - `VITE_GEMINI_API_KEY`: Your Google Gemini API key (development)
+- `VITE_OPENAI_API_KEY`: Your OpenAI API key (development, optional)
+- `VITE_OPENROUTER_API_KEY`: Your OpenRouter API key (development, optional)
 - `GEMINI_API_KEY`: Your Google Gemini API key (Docker runtime)
+- `OPENAI_API_KEY`: Your OpenAI API key (Docker runtime, optional)
+- `OPENROUTER_API_KEY`: Your OpenRouter API key (Docker runtime, optional)
 
 ## Evidence Evaluation Framework
 
@@ -195,7 +211,7 @@ The SIFT method and educational materials are used with acknowledgment to the or
 - API usage is subject to Google's rate limits and quotas
 - The accuracy of reports depends on the quality of available online sources
 - Generated reports should be treated as one input into a human-checked process
-- Currently only supports Google Gemini models (other providers coming soon)
+- Supports models from Google Gemini, OpenAI, and various providers via OpenRouter. (Support for direct Hugging Face and Mistral integration coming soon).
 
 ## Contributing
 
@@ -207,7 +223,7 @@ See [ROADMAP.md](./ROADMAP.md) for planned features including:
 
 - Export to PDF with smart formatting
 - Persistent storage with RAG retrieval
-- Multi-provider support (OpenRouter, Hugging Face, Mistral)
+- Multi-provider support (Hugging Face, Mistral)
 - Document and URL analysis
 - Enhanced UI with cognitive load management
 
