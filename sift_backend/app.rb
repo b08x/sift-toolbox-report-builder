@@ -4,6 +4,7 @@ require 'json'
 require 'sinatra/cross_origin'
 require 'dotenv/load' # Loads environment variables from .env
 require_relative 'config/database' # Load database configuration
+require_relative 'services/sift_service'
 
 class MyCustomError < StandardError; end
 
@@ -155,6 +156,104 @@ end
 get '/api/test_standard_error' do
   settings.logger.info "Triggering a StandardError..."
   raise StandardError, "This is a test of the generic StandardError handling."
+end
+
+post '/api/sift/initiate' do
+  settings.logger.info "POST /api/sift/initiate - Received request"
+
+  # Parameter extraction
+  user_input_text = params['userInputText']
+  # When a file is uploaded, params['userImageFile'] is a hash, e.g.:
+  # { :filename => "my_image.png", :type => "image/png",
+  #   :name => "userImageFile", :tempfile => #<File:/tmp/RackMultipart2023...>,
+  #   :head => "Content-Disposition: form-data; name="userImageFile"; filename="my_image.png"\r\nContent-Type: image/png\r\n" }
+  user_image_file_data = params['userImageFile']
+  report_type = params['reportType']
+  selected_model_id = params['selectedModelId']
+  model_config_params_json = params['modelConfigParams']
+
+  settings.logger.debug "Raw params: #{params.inspect}" # For detailed debugging
+  settings.logger.debug "userInputText: #{user_input_text.nil? || user_input_text.empty? ? 'empty' : user_input_text[0..50]}"
+  settings.logger.debug "userImageFile: #{user_image_file_data.inspect if user_image_file_data}"
+  settings.logger.debug "reportType: #{report_type}"
+  settings.logger.debug "selectedModelId: #{selected_model_id}"
+  settings.logger.debug "modelConfigParams_json: #{model_config_params_json}"
+
+  # Validation
+  has_text = user_input_text && !user_input_text.strip.empty?
+  has_image = user_image_file_data && user_image_file_data[:tempfile] && user_image_file_data[:filename]
+
+  unless has_text || has_image
+    settings.logger.warn "Validation failed: userInputText or userImageFile is required."
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'Either userInputText or userImageFile must be provided and contain data.' } }.to_json
+  end
+
+  if (report_type.nil? || report_type.strip.empty?)
+    settings.logger.warn "Validation failed: reportType is required."
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'reportType is a required parameter.' } }.to_json
+  end
+
+  if (selected_model_id.nil? || selected_model_id.strip.empty?)
+    settings.logger.warn "Validation failed: selectedModelId is required."
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'selectedModelId is a required parameter.' } }.to_json
+  end
+
+  model_config_params = {}
+  if model_config_params_json && !model_config_params_json.strip.empty?
+    begin
+      model_config_params = JSON.parse(model_config_params_json)
+      unless model_config_params.is_a?(Hash)
+        settings.logger.warn "Validation failed: modelConfigParams is not a valid JSON object string."
+        halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: 'modelConfigParams must be a string representing a valid JSON object.' } }.to_json
+      end
+    rescue JSON::ParserError => e
+      settings.logger.warn "JSON Parsing Error for modelConfigParams: #{e.message}"
+      halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: "Invalid JSON format for modelConfigParams: #{e.message}" } }.to_json
+    end
+  else
+    # If modelConfigParams is not provided or is an empty string, use an empty hash
+    model_config_params = {}
+  end
+
+  content_type 'text/event-stream'
+  stream(:keep_open) do |out|
+    settings.logger.info "SSE stream opened for /api/sift/initiate. Client: #{request.ip}"
+    begin
+      service_args = {
+        report_type: report_type,
+        selected_model_id: selected_model_id,
+        model_config_params: model_config_params
+      }
+      service_args[:text] = user_input_text if has_text
+      # Pass the file hash directly, service will handle :tempfile
+      service_args[:image_file] = user_image_file_data if has_image
+
+      SiftService.initiate_analysis(**service_args) do |chunk|
+        if out.closed?
+          settings.logger.warn "SSE stream closed by client, cannot send chunk: #{chunk.strip}"
+          break
+        end
+        settings.logger.debug "Streaming chunk: #{chunk.strip}"
+        out << chunk
+      end
+      settings.logger.info "SiftService.initiate_analysis stream completed for client: #{request.ip}"
+
+    rescue => e # Catch any error from SiftService or within the stream block
+      settings.logger.error "Error during SSE streaming or SiftService execution: #{e.class.name} - #{e.message}"
+      settings.logger.error e.backtrace.join("\n")
+      unless out.closed?
+        # It's good practice to send a structured error event.
+        # The SiftService itself might yield a more specific error event if the error originates there.
+        # This is a fallback.
+        error_data = { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" }.to_json
+        out << "event: error\ndata: #{error_data}\n\n"
+      end
+    ensure
+      settings.logger.info "SSE stream ensure block reached. Closing stream for client: #{request.ip}"
+      # Sinatra's stream(:keep_open) handles closing the stream when the block exits.
+    end
+    settings.logger.info "SSE stream block finished for client: #{request.ip}"
+  end
 end
 
 # Note: To test Sinatra::NotFound, simply try to access any undefined route,
