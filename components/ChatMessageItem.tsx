@@ -10,7 +10,7 @@ interface ChatMessageItemProps {
 }
 
 // Parser for SIFT Full Check report
-const parseSiftFullCheckReport = (markdownText: string): ParsedReportSection[] => {
+const parseReportIntoSections = (markdownText: string): ParsedReportSection[] => {
   const sections: ParsedReportSection[] = [];
   let remainingText = markdownText;
 
@@ -27,19 +27,16 @@ const parseSiftFullCheckReport = (markdownText: string): ParsedReportSection[] =
     remainingText = remainingText.substring(preambleMatch[0].length).trim();
   }
 
-  // Regex to find section titles (H2 or H3) like "## 1. Verified Facts Table" or "### 🛠️ Corrections Summary:"
-  // It uses a positive lookahead to split the text while keeping the delimiters (headers).
-  const sectionSplitRegex = /(?=^(?:##\s*\d+\.\s*(?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?|###\s*(?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?):?\s*$)/gm;
+  const sectionSplitRegex = /(?=^###? .*$)/gm;
   
   const parts = remainingText.split(sectionSplitRegex).filter(part => part.trim() !== '');
 
   for (const part of parts) {
-    const headerMatch = part.match(/^(##\s*\d+\.\s*((?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?)|###\s*((?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?)):?\s*$/m);
+    const headerMatch = part.match(/^(##\s+(.*?)|###\s+(.*?)):?\s*$/m);
     
     if (headerMatch) {
       const rawTitleLine = headerMatch[0].trim();
-      const isH2 = rawTitleLine.startsWith('##');
-      // Extract title text after "## \d. " or "### "
+      const isH2 = rawTitleLine.startsWith('## '); // Check for space after ##
       let title = (isH2 ? headerMatch[2] : headerMatch[3]) || "Untitled Section";
       title = title.trim().replace(/:$/, '').trim();
 
@@ -52,14 +49,25 @@ const parseSiftFullCheckReport = (markdownText: string): ParsedReportSection[] =
         level: isH2 ? 2 : 3,
       });
     } else if (part.trim() && sections.length > 0) {
-      // Content that might not have been captured with its header or is part of the last section
       sections[sections.length - 1].content += `\n\n${part.trim()}`;
     } else if (part.trim()) {
-        // Orphan part, shouldn't happen often if preamble and headers are correct
          sections.push({ title: "Miscellaneous", rawTitle: "Miscellaneous", content: part.trim(), level: 0 });
     }
   }
-  return sections.filter(s => s.content.trim() !== '' || s.title === "Report Information"); // Ensure sections have content or are preamble
+  return sections.filter(s => s.content.trim() !== '' || s.title === "Report Information");
+};
+
+const downloadMarkdown = (content: string, filename: string) => {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 
@@ -73,9 +81,46 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => 
       .catch(err => console.error('Failed to copy message: ', err));
   };
 
+  const handleExportReport = () => {
+    if (!isInitialSIFTReport || !originalQueryReportType || !text) return;
+
+    const reportDate = new Date(timestamp);
+    const displayDate = reportDate.toLocaleString();
+    const filenameDate = reportDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const reportTypeSanitized = originalQueryReportType.replace(/\s+/g, '_');
+    const filename = `SIFT_Report_${reportTypeSanitized}_${filenameDate}.md`;
+
+    let groundingSourcesText = '**Grounding Sources:** N/A';
+    if (groundingSources && groundingSources.length > 0) {
+        const sourcesList = groundingSources
+            .filter(s => s.web && s.web.uri)
+            .map(s => `  - [${s.web?.title || s.web?.uri}](${s.web?.uri})`)
+            .join('\n');
+        if (sourcesList) {
+            groundingSourcesText = `**Grounding Sources:**\n${sourcesList}`;
+        }
+    }
+    
+    const metadataHeader = `\
+# SIFT Report Export
+
+**Generated:** ${displayDate}
+**Report Type:** ${originalQueryReportType}
+**Model Used:** ${modelId || 'N/A'}
+${groundingSourcesText}
+---
+
+`;
+    const fullMarkdownContent = metadataHeader + text;
+
+    downloadMarkdown(fullMarkdownContent, filename);
+  };
+
+
   const renderContent = () => {
-    if (isInitialSIFTReport && originalQueryReportType === ReportType.FULL_CHECK && !isError && !isLoading) {
-      const parsedSections = parseSiftFullCheckReport(text);
+    if (isInitialSIFTReport && !isError && !isLoading) {
+      const parsedSections = parseReportIntoSections(text);
       if (parsedSections.length > 0) {
         return (
           <div className="space-y-4">
@@ -94,15 +139,16 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => 
         );
       }
     }
-    // Default rendering for user messages, non-full-check AI messages, or if parsing fails
-    if (text.trim() || isLoading) {
+    // Default rendering for user messages, non-full-check AI messages, errors, or if parsing fails
+    if (text.trim() || isLoading || (isUser && imagePreviewUrl && !text.trim())) { // Ensure image-only user messages are rendered
       return (
         <div className="markdown-content prose-sm sm:prose-base max-w-none">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
         </div>
       );
     }
-    return isUser && !imagePreviewUrl ? <p className="text-sm italic text-indigo-300">(Sent an image)</p> : null;
+     // Fallback for empty user message without image (should be rare)
+    return isUser && !imagePreviewUrl ? <p className="text-sm italic text-indigo-300">(Empty message)</p> : null;
   };
 
   return (
@@ -122,15 +168,17 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => 
               <span className="text-lg mr-2">{SIFT_ICON}</span>
               <span className="font-semibold text-sky-400 text-sm">SIFT Assistant</span>
             </div>
-            {modelId && <span className="text-xs text-slate-500 ml-2">({modelId.split('/').pop()})</span>}
+            {modelId && <span className="text-xs text-slate-500 ml-2">({modelId.split('/').pop()?.split(':').shift()})</span>}
           </div>
         )}
         {isUser && imagePreviewUrl && (
             <div className="mb-2">
                 <img src={imagePreviewUrl} alt="User upload" className="max-h-48 max-w-full rounded-md border border-slate-500" />
+                 {/* Display text only if it exists alongside an image */}
+                {text.trim() && <p className="mt-1 text-sm">{/* User text is rendered by renderContent */}</p>}
             </div>
         )}
-        {isUser && !imagePreviewUrl && text.trim() && <p className="font-semibold mb-1 text-sm text-indigo-200">You</p>}
+        {isUser && <p className="font-semibold mb-1 text-sm text-indigo-200">You</p>}
         
         {renderContent()}
 
@@ -167,6 +215,22 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({ message }) => 
                 )
               ))}
             </ul>
+          </div>
+        )}
+
+        {!isUser && isInitialSIFTReport && !isLoading && !isError && text.trim() && (
+          <div className="mt-3 pt-3 border-t border-slate-600">
+            <button
+              onClick={handleExportReport}
+              className="inline-flex items-center px-3 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-700 focus:ring-emerald-500 transition-colors"
+              aria-label="Export SIFT report as Markdown"
+              title="Export SIFT report as Markdown"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Export Report
+            </button>
           </div>
         )}
         

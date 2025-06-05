@@ -1,16 +1,34 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { GoogleGenAI, Chat, Part, GenerateContentResponse, Content } from "@google/genai";
-import { v4 as uuidv4 } from 'uuid';
 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { GoogleGenAI, Chat, GenerateContentResponse, Part } from "@google/genai"; // Removed APIError
+import OpenAI from 'openai';
+import { v4 as uuidv4 } from 'uuid';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+import { Sidebar } from './components/Sidebar';
 import { InputForm } from './components/InputForm';
+import { ChatInterface } from './components/ChatInterface';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorAlert } from './components/ErrorAlert';
-import { ChatInterface } from './components/ChatInterface';
-import { Sidebar } from './components/Sidebar';
-import { UserQueryPanel } from './components/UserQueryPanel'; 
-import { ReportType, ChatMessage, GroundingChunk, AIProvider, AIModelConfig, ConfigurableParams, ModelParameter, CurrentSiftQueryDetails, OriginalQueryInfo } from './types';
-import { SIFT_ICON } from './constants';
-import { SIFT_CHAT_SYSTEM_PROMPT, SIFT_FULL_CHECK_PROMPT, SIFT_CONTEXT_REPORT_PROMPT, SIFT_COMMUNITY_NOTE_PROMPT } from './prompts';
+import { UserQueryPanel } from './components/UserQueryPanel';
+
+import { 
+  ReportType, 
+  ChatMessage, 
+  GroundingChunk, 
+  OriginalQueryInfo, 
+  AIProvider, 
+  AIModelConfig, 
+  ConfigurableParams,
+  CurrentSiftQueryDetails
+} from './types';
+import { 
+  SIFT_FULL_CHECK_PROMPT, 
+  SIFT_CONTEXT_REPORT_PROMPT, 
+  SIFT_COMMUNITY_NOTE_PROMPT,
+  SIFT_CHAT_SYSTEM_PROMPT
+} from './prompts';
 import { AVAILABLE_PROVIDERS_MODELS } from './models.config';
 
 const App: React.FC = () => {
@@ -19,798 +37,784 @@ const App: React.FC = () => {
   const [reportType, setReportType] = useState<ReportType>(ReportType.FULL_CHECK);
   
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatSession, setChatSession] = useState<Chat | null>(null);
-  const [ai, setAi] = useState<GoogleGenAI | null>(null);
-  
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState<string>('');
-  const [configLoaded, setConfigLoaded] = useState<boolean>(false);
+  
+  const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
+  const [openaiApiKey, setOpenaiApiKey] = useState<string | null>(null);
+  const [openrouterApiKey, setOpenrouterApiKey] = useState<string | null>(null);
 
+  const [geminiAi, setGeminiAi] = useState<GoogleGenAI | null>(null);
+  const [openaiClient, setOpenaiClient] = useState<OpenAI | null>(null);
+  
+  const [currentChat, setCurrentChat] = useState<Chat | null>(null);
+  const [currentOpenAIChatHistory, setCurrentOpenAIChatHistory] = useState<OpenAI.Chat.Completions.ChatCompletionMessageParam[]>([]);
+
+
+  const [isChatActive, setIsChatActive] = useState<boolean>(false);
+  const [currentSiftQueryDetails, setCurrentSiftQueryDetails] = useState<CurrentSiftQueryDetails | null>(null);
+  const [originalQueryForRestart, setOriginalQueryForRestart] = useState<OriginalQueryInfo | null>(null);
+  
+  // Model Selection States
   const [selectedProviderKey, setSelectedProviderKey] = useState<AIProvider>(AIProvider.GOOGLE_GEMINI);
-  const [selectedModelId, setSelectedModelId] = useState<string>('');
+  const [selectedModelId, setSelectedModelId] = useState<string>(AVAILABLE_PROVIDERS_MODELS.find(m => m.provider === AIProvider.GOOGLE_GEMINI)?.id || AVAILABLE_PROVIDERS_MODELS[0].id);
   const [modelConfigParams, setModelConfigParams] = useState<ConfigurableParams>({});
 
-  const [currentSiftQueryDetails, setCurrentSiftQueryDetails] = useState<CurrentSiftQueryDetails | null>(null);
+  // Gemini Preprocessing state
+  const [enableGeminiPreprocessing, setEnableGeminiPreprocessing] = useState<boolean>(false);
+  const [geminiPreprocessingOutputText, setGeminiPreprocessingOutputText] = useState<string | null>(null);
 
-  interface LastGenerationInput {
-    partsToResend: Part[];
-    modelIdToUse: string;
-    // For restarting an initial SIFT report
-    chatConfigForInitial?: any;
-    originalQueryForInitial?: OriginalQueryInfo; // To reconstruct user query message and SIFT details panel
-    // For restarting a follow-up message in an existing session
-    chatSessionForFollowup?: Chat | null;
-    // Discriminator
-    isInitialRestart: boolean;
-  }
-  const [lastGenerationInput, setLastGenerationInput] = useState<LastGenerationInput | null>(null);
 
-  const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
-  const isStoppingRef = useRef<boolean>(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Initialize API keys and clients
   useEffect(() => {
-    if (AVAILABLE_PROVIDERS_MODELS.length > 0) {
-      const initialModel = AVAILABLE_PROVIDERS_MODELS.find(m => m.provider === AIProvider.GOOGLE_GEMINI) || AVAILABLE_PROVIDERS_MODELS[0];
-      if (initialModel) {
-        setSelectedProviderKey(initialModel.provider);
-        setSelectedModelId(initialModel.id);
-        const initialParams: ConfigurableParams = {};
-        initialModel.parameters.forEach(param => {
-          initialParams[param.key] = param.defaultValue;
-        });
-        setModelConfigParams(initialParams);
-      }
-    }
+    console.log('[DEBUG] Initializing API Keys from import.meta.env');
+    console.log('[DEBUG] import.meta.env.VITE_API_KEY:', import.meta.env.VITE_API_KEY);
+    console.log('[DEBUG] import.meta.env.VITE_OPENAI_API_KEY:', import.meta.env.VITE_OPENAI_API_KEY);
+    console.log('[DEBUG] import.meta.env.VITE_OPENROUTER_API_KEY:', import.meta.env.VITE_OPENROUTER_API_KEY);
+
+    const geminiKeyFromEnv = typeof import.meta.env.VITE_API_KEY === 'string' ? import.meta.env.VITE_API_KEY : null;
+    setGeminiApiKey(geminiKeyFromEnv);
+    console.log('[DEBUG] geminiApiKey (state after set from VITE_API_KEY):', geminiKeyFromEnv);
+
+    const openaiKeyFromEnv = typeof import.meta.env.VITE_OPENAI_API_KEY === 'string' ? import.meta.env.VITE_OPENAI_API_KEY : null;
+    setOpenaiApiKey(openaiKeyFromEnv);
+    console.log('[DEBUG] openaiApiKey (state after set from VITE_OPENAI_API_KEY):', openaiKeyFromEnv);
+
+    const openrouterKeyFromEnv = typeof import.meta.env.VITE_OPENROUTER_API_KEY === 'string' ? import.meta.env.VITE_OPENROUTER_API_KEY : null;
+    setOpenrouterApiKey(openrouterKeyFromEnv);
+    console.log('[DEBUG] openrouterApiKey (state after set from VITE_OPENROUTER_API_KEY):', openrouterKeyFromEnv);
   }, []);
 
-  // Handle runtime config loading timing
+  const getSelectedModelConfig = useCallback(() => {
+    return AVAILABLE_PROVIDERS_MODELS.find(m => m.id === selectedModelId && m.provider === selectedProviderKey);
+  }, [selectedModelId, selectedProviderKey]);
+
   useEffect(() => {
-    // Check if runtime config is already available
-    if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG) {
-      console.log('🚀 Runtime config already available');
-      setConfigLoaded(true);
-      return;
+    const currentModelConfig = getSelectedModelConfig();
+    if (currentModelConfig) {
+      const initialParams: ConfigurableParams = {};
+      currentModelConfig.parameters.forEach(param => {
+        initialParams[param.key] = param.defaultValue;
+      });
+      setModelConfigParams(initialParams);
     }
+  }, [selectedModelId, selectedProviderKey, getSelectedModelConfig]);
 
-    // Listen for runtime config loaded event
-    const handleConfigLoaded = () => {
-      console.log('📡 Runtime config loaded event received');
-      setConfigLoaded(true);
-    };
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('runtime-config-loaded', handleConfigLoaded);
-    }
-
-    // Fallback: wait a bit and then check again
-    const fallbackTimer = setTimeout(() => {
-      console.log('⏱️ Fallback timer: checking for runtime config');
-      setConfigLoaded(true);
-    }, 1000);
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('runtime-config-loaded', handleConfigLoaded);
-      }
-      clearTimeout(fallbackTimer);
-    };
-  }, []);
-
-  // Main API key initialization effect
   useEffect(() => {
-    // Don't proceed until we've given runtime config a chance to load
-    if (!configLoaded) {
-      console.log('⏳ Waiting for runtime configuration to load...');
-      return;
-    }
-
-    // Get API key with priority: Runtime Config > Vite Env
-    const getRuntimeApiKey = () => {
-      if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG?.VITE_GEMINI_API_KEY) {
-        return (window as any).RUNTIME_CONFIG.VITE_GEMINI_API_KEY;
-      }
-      return null;
-    };
-
-    const getViteApiKey = () => {
-      return import.meta.env.VITE_GEMINI_API_KEY || '';
-    };
-
-    // Try runtime config first (for Docker), then fallback to Vite env (for dev)
-    let envApiKey = getRuntimeApiKey() || getViteApiKey();
-    
-    console.log('🔍 API Key Debug (Post-Config Load):');
-    console.log('  Config loaded state:', configLoaded);
-    console.log('  Runtime config exists:', !!(typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG));
-    console.log('  Runtime API key:', getRuntimeApiKey() ? `${getRuntimeApiKey()?.substring(0, 10)}...` : 'none');
-    console.log('  Vite API key:', getViteApiKey() ? `${getViteApiKey()?.substring(0, 10)}...` : 'none');
-    console.log('  Final API key selected:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'none');
-    console.log('  Key is placeholder:', envApiKey === 'VITE_GEMINI_API_KEY_PLACEHOLDER');
-    
-    // Validate API key
-    const isValidKey = envApiKey && 
-                      envApiKey.trim() !== '' && 
-                      envApiKey !== 'VITE_GEMINI_API_KEY_PLACEHOLDER' && 
-                      envApiKey !== 'NOT_SET';
-
-    if (isValidKey) {
-      setApiKey(envApiKey);
-      try {
-        if (selectedProviderKey === AIProvider.GOOGLE_GEMINI) {
-          const genAI = new GoogleGenAI({ apiKey: envApiKey });
-          setAi(genAI);
-          setError(null); // Clear any previous errors
-          console.log('✅ Google Gemini API client initialized successfully');
+    setError(null); // Clear global error when provider changes
+    const initClients = async () => {
+      // Initialize Gemini
+      if (selectedProviderKey === AIProvider.GOOGLE_GEMINI || (selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing)) {
+        if (geminiApiKey) {
+          try {
+            const ga = new GoogleGenAI({ apiKey: geminiApiKey });
+            setGeminiAi(ga);
+          } catch (e) {
+            console.error("Failed to initialize GoogleGenAI:", e);
+            setError("Failed to initialize Google Gemini client. Check API key and network.");
+            setGeminiAi(null);
+          }
         } else {
-          setError("Selected provider is not yet supported for API client initialization.");
-          setAi(null);
+          setGeminiAi(null);
+          // Error set by API key check later if needed by an operation
         }
-      } catch (e: any) {
-        setError(`Failed to initialize API for ${selectedProviderKey}: ${e.message}. Ensure API key is valid.`);
-        console.error("❌ API Initialization Error:", e);
-        setAi(null);
-      }
-    } else {
-      // Determine specific error message
-      let errorMessage = "API Key not available.";
-      
-      if (envApiKey === 'VITE_GEMINI_API_KEY_PLACEHOLDER') {
-        errorMessage = "API Key placeholder was not replaced during Docker startup. Check that GEMINI_API_KEY environment variable is set when running the container.";
-      } else if (envApiKey === 'NOT_SET') {
-        errorMessage = "GEMINI_API_KEY environment variable was not provided to the Docker container.";
-      } else if (!envApiKey || envApiKey.trim() === '') {
-        errorMessage = "No API key found. In Docker, ensure GEMINI_API_KEY environment variable is provided. In development, set VITE_GEMINI_API_KEY in your .env file.";
       } else {
-        errorMessage = "API key found but appears to be invalid.";
+        setGeminiAi(null);
       }
-      
-      setError(errorMessage);
-      setAi(null);
-      console.error('❌ API Key Error:', errorMessage);
-    }
-  }, [selectedProviderKey, configLoaded]);
 
-  const getSiftInstructionsForReportType = (type: ReportType): string => {
-    switch (type) {
-      case ReportType.CONTEXT_REPORT:
-        return SIFT_CONTEXT_REPORT_PROMPT;
-      case ReportType.COMMUNITY_NOTE:
-        return SIFT_COMMUNITY_NOTE_PROMPT;
-      case ReportType.FULL_CHECK:
-      default:
-        return SIFT_FULL_CHECK_PROMPT;
+      // Initialize OpenAI client (for OpenAI or OpenRouter)
+      if (selectedProviderKey === AIProvider.OPENAI) {
+        if (openaiApiKey) {
+          try {
+            const oai = new OpenAI({ apiKey: openaiApiKey, dangerouslyAllowBrowser: true });
+            setOpenaiClient(oai);
+          } catch (e) {
+            console.error("Failed to initialize OpenAI client:", e);
+            setError("Failed to initialize OpenAI client. Check API key and network.");
+            setOpenaiClient(null);
+          }
+        } else {
+          setOpenaiClient(null);
+        }
+      } else if (selectedProviderKey === AIProvider.OPENROUTER) {
+        if (openrouterApiKey) {
+          try {
+            const orai = new OpenAI({
+              baseURL: 'https://openrouter.ai/api/v1',
+              apiKey: openrouterApiKey,
+              defaultHeaders: {
+                'HTTP-Referer': 'https://sift-toolbox.app.placeholder.com', // Replace with actual site URL if deployed
+                'X-Title': 'SIFT Toolbox Report Builder', // Replace with actual site name
+              },
+              dangerouslyAllowBrowser: true,
+            });
+            setOpenaiClient(orai);
+          } catch (e) {
+            console.error("Failed to initialize OpenRouter client:", e);
+            setError("Failed to initialize OpenRouter client. Check API key and network.");
+            setOpenaiClient(null);
+          }
+        } else {
+          setOpenaiClient(null);
+        }
+      } else {
+        setOpenaiClient(null);
+      }
+    };
+    initClients();
+  }, [selectedProviderKey, geminiApiKey, openaiApiKey, openrouterApiKey, enableGeminiPreprocessing]);
+
+
+  const handleSelectProvider = (provider: AIProvider) => {
+    setSelectedProviderKey(provider);
+    const firstModel = AVAILABLE_PROVIDERS_MODELS.find(m => m.provider === provider);
+    if (firstModel) {
+      setSelectedModelId(firstModel.id);
+    } else {
+      setSelectedModelId(AVAILABLE_PROVIDERS_MODELS[0].id); // Fallback
     }
+    handleClearChatAndReset(false); // Clear chat when provider changes
   };
 
-  const handleClearChatAndReset = useCallback(() => {
-    isStoppingRef.current = true; // Stop any ongoing generation
-    setChatMessages([]);
-    setChatSession(null);
-    setUserInputText('');
-    setUserImageFile(null);
-    setCurrentSiftQueryDetails(null);
-    setLastGenerationInput(null);
-    setError(null);
-    setIsLoading(false);
-    // Ensure isStoppingRef is reset if a new operation starts later
-    setTimeout(() => isStoppingRef.current = false, 0);
-  }, []);
-
-  const handleStopGeneration = useCallback(() => {
-    isStoppingRef.current = true;
-    setIsLoading(false);
-    setError(null); // Clear any errors when stopping
-    setChatMessages(prev => {
-      if (prev.length === 0) return prev;
-      const lastMessageIndex = prev.length - 1;
-      if (prev[lastMessageIndex]?.sender === 'ai' && prev[lastMessageIndex]?.isLoading) {
-        return prev.map((msg, index) => 
-          index === lastMessageIndex 
-          ? { 
-              ...msg, 
-              text: (msg.text && msg.text.trim() !== '') ? msg.text + "\n\n--- Generation stopped by user. ---" : "Generation stopped by user.", 
-              isLoading: false, 
-              isError: false 
-            } 
-          : msg
-        );
-      }
-      return prev;
-    });
-  }, []);
-
-  const handleStartChat = useCallback(async () => {
-    if (selectedProviderKey === AIProvider.GOOGLE_GEMINI && !ai) {
-      setError("Gemini API client is not initialized. Check API Key.");
-      return;
-    }
-    if (!selectedModelId) {
-        setError("No model selected. Please choose a model in the sidebar.");
-        return;
-    }
-    if (!userInputText && !userImageFile) {
-      setError("Please provide text or an image to start the analysis.");
-      return;
-    }
-
-    isStoppingRef.current = false; // Reset stop flag for new operation
-    setIsLoading(true);
-    setError(null);
-    setChatMessages([]); 
-
-    let imageBase64: string | null = null;
-    let imageMimeType: string | null = null;
-    let imagePreviewUrl: string | undefined = undefined;
-
-    if (userImageFile) {
-      try {
-        imagePreviewUrl = URL.createObjectURL(userImageFile);
-        const base64WithMime = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(userImageFile);
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = (err) => reject(err);
-        });
-        const parts = base64WithMime.split(',');
-        if (parts.length === 2) {
-            imageBase64 = parts[1];
-            imageMimeType = userImageFile.type;
-        } else {
-            throw new Error("Invalid base64 image format.");
-        }
-      } catch (err) {
-        console.error('Failed to process image file:', err);
-        setError('Failed to process image file. Please try another image or check the console.');
-        setIsLoading(false);
-        if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl); 
-        return;
-      }
-    }
-    
-    setCurrentSiftQueryDetails({ 
-        userInputText: userInputText || '', 
-        userImagePreviewUrl: imagePreviewUrl,
-        reportType,
-    });
-
-    const userQueryMessage: ChatMessage = {
-      id: uuidv4(),
-      sender: 'user',
-      text: userInputText || (userImageFile ? "(Image provided)" : ""), 
-      timestamp: new Date(),
-      imagePreviewUrl: imagePreviewUrl,
-      originalQuery: { 
-          text: userInputText,
-          imageBase64: imageBase64,
-          imageMimeType: imageMimeType,
-          reportType: reportType,
-      }
-    };
-    setChatMessages([userQueryMessage]);
-
-    // Store details needed for a potential restart of this initial SIFT report
-    const originalQueryForRestart: OriginalQueryInfo = {
-        text: userInputText,
-        imageBase64: imageBase64,
-        imageMimeType: imageMimeType,
-        reportType: reportType,
-    };
-
-    const currentSelectedModelConfig = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === selectedModelId);
-    const chatConfig: any = {
-        systemInstruction: SIFT_CHAT_SYSTEM_PROMPT,
-        ...modelConfigParams,
-    };
-
-    if (currentSelectedModelConfig?.supportsGoogleSearch) {
-        chatConfig.tools = [{ googleSearch: {} }];
-    }
-
-    if (selectedProviderKey === AIProvider.GOOGLE_GEMINI && !ai) {
-        setError("Gemini API client is not available. Cannot start chat.");
-        setIsLoading(false);
-        return;
-    }
-
-    const currentChat = ai!.chats.create({
-        model: selectedModelId,
-        config: chatConfig,
-    });
-    setChatSession(currentChat);
-
-    const partsForGemini: Part[] = [];
-    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    let siftTaskInstructions = getSiftInstructionsForReportType(reportType);
-    siftTaskInstructions = siftTaskInstructions.replace(/\[current date placeholder, will be provided in task\]/g, currentDate);
-    siftTaskInstructions = siftTaskInstructions.replace(/\[current date\]/g, currentDate);
-
-    let firstMessageContent = `Using the SIFT methodology, please perform a "${reportType}" analysis with the model "${currentSelectedModelConfig?.name || selectedModelId}". The current date is ${currentDate}.\n`;
-    if (userInputText) {
-      firstMessageContent += `User's textual input: "${userInputText}"\n`;
-    }
-    if (userImageFile && imageBase64 && imageMimeType) {
-      firstMessageContent += `An image has been uploaded. Please analyze it as part of your SIFT process (describe, transcribe text if any, check provenance, etc.).\n`;
-      partsForGemini.push({ inlineData: { data: imageBase64, mimeType: imageMimeType } });
-    }
-    firstMessageContent += `\nHere are the detailed SIFT instructions for this task:\n${siftTaskInstructions}\n--- TASK START ---`;
-    partsForGemini.push({ text: firstMessageContent });
-
-    setLastGenerationInput({
-        partsToResend: [...partsForGemini], // Clone parts
-        modelIdToUse: selectedModelId,
-        chatConfigForInitial: { ...chatConfig }, // Clone config
-        originalQueryForInitial: originalQueryForRestart,
-        isInitialRestart: true,
-        chatSessionForFollowup: null // Not used for initial
-    });
-    
-    const aiResponseMessageId = uuidv4();
-    setChatMessages(prev => [...prev, {
-        id: aiResponseMessageId, 
-        sender: 'ai', 
-        text: '', 
-        timestamp: new Date(), 
-        isLoading: true, 
-        modelId: selectedModelId,
-        isInitialSIFTReport: true, 
-        originalQueryReportType: reportType 
-    }]);
-
-    try {
-      const resultStream = await currentChat.sendMessageStream({ message: partsForGemini });
-      let currentText = '';
-      let currentGroundingSources: GroundingChunk[] | undefined = undefined;
-
-      for await (const chunk of resultStream) {
-        if (isStoppingRef.current) break;
-        currentText += chunk.text; 
-        currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
-            web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
-        })).filter(Boolean) as GroundingChunk[] || currentGroundingSources;
-
-        setChatMessages(prev => prev.map(msg => 
-          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
-        ));
-      }
-
-      if (isStoppingRef.current) {
-        // Message update handled by handleStopGeneration
-      } else {
-        setChatMessages(prev => prev.map(msg => 
-          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-        ));
-      }
-    } catch (err: any) {
-      if (!isStoppingRef.current) {
-        console.error("Error in initial chat message:", err);
-        const errorMessage = err.message || 'An unexpected error occurred while generating the initial report.';
-        setError(errorMessage);
-        setChatMessages(prev => prev.map(msg => 
-          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true } : msg
-        ));
-      } else {
-        console.warn("Stream error during stop:", err);
-      }
-    } finally {
-      if (!isStoppingRef.current) {
-        setIsLoading(false);
-      }
-    }
-  }, [ai, userInputText, userImageFile, reportType, selectedModelId, modelConfigParams, selectedProviderKey, getSiftInstructionsForReportType, handleStopGeneration]);
-
-
-  const handleSendChatMessage = useCallback(async (messageText: string, command?: 'another round' | 'read the room') => {
-    if (!chatSession || (selectedProviderKey === AIProvider.GOOGLE_GEMINI && !ai)) {
-      setError("Chat session is not active or AI client not initialized.");
-      return;
-    }
-    if (!messageText.trim() && !command) {
-        return;
-    }
-
-    const textToSend = command ? command : messageText;
-
-    isStoppingRef.current = false; // Reset stop flag
-    setIsLoading(true);
-    setError(null);
-
-    const userMessage: ChatMessage = {
-      id: uuidv4(),
-      sender: 'user',
-      text: textToSend,
-      timestamp: new Date(),
-    };
-    setChatMessages(prev => [...prev, userMessage]);
-
-    const partsForGemini: Part[] = [{ text: textToSend }];
-    
-    setLastGenerationInput({
-        partsToResend: [...partsForGemini], // Clone parts
-        modelIdToUse: selectedModelId,
-        chatSessionForFollowup: chatSession, // Reference to the current session
-        isInitialRestart: false,
-        // Not used for follow-up restarts:
-        chatConfigForInitial: undefined,
-        originalQueryForInitial: undefined
-    });
-
-    const aiResponseMessageId = uuidv4();
-    setChatMessages(prev => [...prev, {
-        id: aiResponseMessageId, 
-        sender: 'ai', 
-        text: '', 
-        timestamp: new Date(), 
-        isLoading: true, 
-        modelId: selectedModelId,
-        isInitialSIFTReport: false 
-    }]);
-    
-    try {
-      // partsForGemini already defined above for setLastGenerationInput
-      const resultStream = await chatSession.sendMessageStream({ message: partsForGemini });
-      let currentText = '';
-      let currentGroundingSources: GroundingChunk[] | undefined = undefined;
-
-      for await (const chunk of resultStream) {
-        if (isStoppingRef.current) break;
-        currentText += chunk.text; 
-        currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
-            web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
-        })).filter(Boolean) as GroundingChunk[] || currentGroundingSources;
-
-        setChatMessages(prev => prev.map(msg => 
-          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
-        ));
-      }
-      
-      if (isStoppingRef.current) {
-        // Message update handled by handleStopGeneration
-      } else {
-        setChatMessages(prev => prev.map(msg => 
-          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-        ));
-      }
-    } catch (err: any) {
-      if (!isStoppingRef.current) {
-        console.error("Error in chat message:", err);
-        const errorMessageText = err.message || 'An unexpected error occurred while sending the chat message.';
-        setError(errorMessageText); 
-        setChatMessages(prev => prev.map(msg => 
-          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessageText}`, isLoading: false, isError: true } : msg
-        ));
-      } else {
-         console.warn("Stream error during stop:", err);
-      }
-    } finally {
-      if (!isStoppingRef.current) {
-        setIsLoading(false);
-      }
-    }
-  }, [chatSession, ai, selectedModelId, selectedProviderKey, handleStopGeneration]);
-
-  const handleRestartGeneration = useCallback(async () => {
-    if (!lastGenerationInput) {
-      setError("Nothing to restart. Last generation input not found.");
-      return;
-    }
-    if (selectedProviderKey === AIProvider.GOOGLE_GEMINI && !ai) {
-      setError("Gemini API client is not initialized. Cannot restart.");
-      return;
-    }
-
-    if (isLoading) {
-      handleStopGeneration(); // Stop current generation first
-      // Give a moment for the stop to take effect
-      isStoppingRef.current = true; // Ensure it's marked as stopping
-      await new Promise(resolve => setTimeout(resolve, 200)); // Wait a bit
-    }
-    
-    isStoppingRef.current = false; // Reset for the new generation
-    setIsLoading(true);
-    setError(null);
-
-    // Remove the last AI message that is being restarted
-    // Also remove the user message that prompted it if it was a follow-up,
-    // or keep the user message if it was an initial SIFT report (as it's part of the query panel)
-    setChatMessages(prevMessages => {
-        if (prevMessages.length === 0) return [];
-        // If restarting a follow-up, the last two messages are user query and AI response.
-        // If restarting an initial SIFT, the last message is the AI response, user query is first.
-        if (lastGenerationInput.isInitialRestart) {
-            // Find the AI message to remove (should be the last one if no follow-ups happened)
-            // Or, more robustly, find the one that was loading or errored from the previous attempt.
-            // For simplicity now, assume it's the last one if it's an AI message.
-            const lastMsg = prevMessages[prevMessages.length -1];
-            if (lastMsg?.sender === 'ai') {
-                return prevMessages.slice(0, -1);
-            }
-            return prevMessages; // Should not happen if restart is valid
-        } else {
-             // For follow-up, remove last user message and last AI message
-            if (prevMessages.length >= 2) {
-                return prevMessages.slice(0, -2);
-            }
-            return []; // Or handle error
-        }
-    });
-    
-    // Brief pause to allow UI to update from chat message removal
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-
-    let streamSourceChat: Chat | null = null;
-    let userQueryMessageForDisplay: ChatMessage | null = null;
-
-    if (lastGenerationInput.isInitialRestart && lastGenerationInput.originalQueryForInitial) {
-      const { text, imageBase64, imageMimeType, reportType: originalReportType } = lastGenerationInput.originalQueryForInitial;
-      
-      let imagePreviewUrlForRestart: string | undefined = undefined;
-      if (imageBase64 && imageMimeType) {
-          // Recreate a blob URL for preview if image data exists.
-          // This is a simplified approach; in a real app, you might want to cache the blob URL
-          // or handle this more robustly if the original File object isn't available.
-          try {
-            const byteCharacters = atob(imageBase64);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: imageMimeType });
-            imagePreviewUrlForRestart = URL.createObjectURL(blob);
-            // Note: This URL should be revoked later, e.g., when chat clears or component unmounts
-          } catch (e) {
-            console.error("Error recreating blob URL for restart:", e);
-          }
-      }
-
-      setCurrentSiftQueryDetails({
-        userInputText: text || '',
-        userImagePreviewUrl: imagePreviewUrlForRestart,
-        reportType: originalReportType,
+  const handleSelectModel = (modelId: string) => {
+    setSelectedModelId(modelId);
+    // Potentially reset params or keep them if compatible
+    const currentModelConfig = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === modelId);
+    if (currentModelConfig) {
+      const newParams: ConfigurableParams = {};
+      currentModelConfig.parameters.forEach(param => {
+        newParams[param.key] = modelConfigParams[param.key] !== undefined ? modelConfigParams[param.key] : param.defaultValue;
       });
-
-      userQueryMessageForDisplay = {
-        id: uuidv4(),
-        sender: 'user',
-        text: text || (imageBase64 ? "(Image provided for restart)" : "(Restarting initial query)"),
-        timestamp: new Date(),
-        imagePreviewUrl: imagePreviewUrlForRestart,
-        originalQuery: lastGenerationInput.originalQueryForInitial,
-      };
-      setChatMessages(prev => [userQueryMessageForDisplay!]); // Start with the user query message
-
-      if (!ai) { // Should be caught earlier, but double check
-          setError("AI client not available for initial restart.");
-          setIsLoading(false);
-          return;
-      }
-      streamSourceChat = ai.chats.create({
-        model: lastGenerationInput.modelIdToUse,
-        config: lastGenerationInput.chatConfigForInitial,
-      });
-      setChatSession(streamSourceChat); // Update main chat session to the new one for initial SIFT
-    } else if (!lastGenerationInput.isInitialRestart && lastGenerationInput.chatSessionForFollowup) {
-      streamSourceChat = lastGenerationInput.chatSessionForFollowup;
-      // For follow-up, the user message that prompted it should be re-added
-      const originalUserText = lastGenerationInput.partsToResend.find(p => p.text)?.text || "(Restarting follow-up)";
-      userQueryMessageForDisplay = {
-        id: uuidv4(),
-        sender: 'user',
-        text: originalUserText,
-        timestamp: new Date(),
-      };
-      setChatMessages(prev => [...prev, userQueryMessageForDisplay!]);
+      setModelConfigParams(newParams);
     }
+     handleClearChatAndReset(false);
+  };
 
-    if (!streamSourceChat) {
-      setError("Chat session not available for restart.");
+  const handleModelConfigChange = (key: string, value: number | string) => {
+    setModelConfigParams(prev => ({ ...prev, [key]: value }));
+  };
+  
+  const handleToggleGeminiPreprocessing = (enabled: boolean) => {
+    setEnableGeminiPreprocessing(enabled);
+    handleClearChatAndReset(false); // Clear chat when this mode changes
+  };
+
+
+  const getSystemPromptForSelectedModel = (): string => {
+    const modelConfig = getSelectedModelConfig();
+    let basePrompt = SIFT_CHAT_SYSTEM_PROMPT; // Default SIFT chat prompt
+
+    if (modelConfig?.provider === AIProvider.OPENAI || modelConfig?.provider === AIProvider.OPENROUTER) {
+        // OpenAI/OpenRouter might benefit from a slightly more direct system prompt for chat
+        basePrompt = `You are a SIFT (Stop, Investigate, Find, Trace) methodology assistant. You help users fact-check claims, understand context, and analyze information. Follow instructions for specific report types when requested. Provide structured, well-cited responses. Ensure all tables are in Markdown format.`;
+    }
+    
+    if (modelConfig?.defaultSystemPrompt) {
+        basePrompt = modelConfig.defaultSystemPrompt;
+    }
+    return basePrompt;
+  }
+
+
+  const fileToGenerativePart = async (file: File): Promise<Part> => {
+    const base64EncodedData = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+      reader.readAsDataURL(file);
+    });
+    return {
+      inlineData: {
+        mimeType: file.type,
+        data: base64EncodedData,
+      },
+    };
+  };
+
+  const constructFullPrompt = (text: string, type: ReportType): string => {
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric'
+    });
+    let basePrompt = '';
+    switch (type) {
+      case ReportType.FULL_CHECK:
+        basePrompt = SIFT_FULL_CHECK_PROMPT;
+        break;
+      case ReportType.CONTEXT_REPORT:
+        basePrompt = SIFT_CONTEXT_REPORT_PROMPT;
+        break;
+      case ReportType.COMMUNITY_NOTE:
+        basePrompt = SIFT_COMMUNITY_NOTE_PROMPT;
+        break;
+      default:
+        basePrompt = SIFT_FULL_CHECK_PROMPT;
+    }
+    return `${basePrompt.replace(/\[current date placeholder, will be provided in task\]|\[current date\]/gi, currentDate)}\n\nUser's initial query: "${text}"`;
+  };
+
+  const handleStartChat = async (isRestart: boolean = false, restartQuery?: OriginalQueryInfo) => {
+    setError(null);
+    setIsLoading(true);
+    setGeminiPreprocessingOutputText(null); // Clear previous output
+    
+    const currentModelConfig = getSelectedModelConfig();
+    if (!currentModelConfig) {
+      setError("Selected model configuration is not available.");
+      setIsLoading(false);
+      return;
+    }
+  
+    const queryToUse = isRestart && restartQuery ? restartQuery : {
+      text: userInputText,
+      imageMimeType: userImageFile?.type,
+      imageBase64: userImageFile ? await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.readAsDataURL(userImageFile);
+      }) : null,
+      reportType: reportType,
+      userImagePreviewUrl: userImageFile ? URL.createObjectURL(userImageFile) : undefined,
+    };
+
+    if (!queryToUse.text?.trim() && !queryToUse.imageBase64) {
+      setError("Please provide text or an image to analyze.");
       setIsLoading(false);
       return;
     }
 
-    const aiResponseMessageId = uuidv4();
-    setChatMessages(prev => [...prev, {
-        id: aiResponseMessageId,
-        sender: 'ai',
-        text: '',
-        timestamp: new Date(),
-        isLoading: true,
-        modelId: lastGenerationInput.modelIdToUse,
-        isInitialSIFTReport: lastGenerationInput.isInitialRestart,
-        originalQueryReportType: lastGenerationInput.isInitialRestart ? lastGenerationInput.originalQueryForInitial?.reportType : undefined
-    }]);
+    const userMessageId = uuidv4();
+    const userMessageText = queryToUse.text || (queryToUse.imageBase64 ? "Image for analysis:" : "Empty query (should not happen)");
+    
+    const userDisplayMessage: ChatMessage = {
+      id: userMessageId,
+      sender: 'user',
+      text: userMessageText,
+      timestamp: new Date(),
+      imagePreviewUrl: queryToUse.userImagePreviewUrl,
+      originalQuery: { // Store original query details with the user message
+        text: queryToUse.text,
+        imageMimeType: queryToUse.imageMimeType,
+        imageBase64: queryToUse.imageBase64,
+        reportType: queryToUse.reportType,
+        userImagePreviewUrl: queryToUse.userImagePreviewUrl
+      }
+    };
+    setChatMessages([userDisplayMessage]);
+    setIsChatActive(true);
+    setCurrentSiftQueryDetails({
+      userInputText: queryToUse.text || '',
+      userImagePreviewUrl: queryToUse.userImagePreviewUrl,
+      reportType: queryToUse.reportType,
+    });
+    setOriginalQueryForRestart(queryToUse); // Save for potential restart
 
-    // Update lastGenerationInput to reflect this new attempt, so it can be restarted again
-    // This is important if the restarted generation itself is stopped.
-    setLastGenerationInput(prevLGI => prevLGI ? {
-        ...prevLGI, // Keep original config/session details
-        partsToResend: [...lastGenerationInput!.partsToResend] // Ensure parts are current
-    } : null);
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    let currentProviderForMainExecution = selectedProviderKey;
+    let mainExecutionModelId = selectedModelId;
+    let mainExecutionPrompt = constructFullPrompt(queryToUse.text || (queryToUse.imageMimeType ? `Input is an image of type ${queryToUse.imageMimeType}. Please describe and analyze it based on the ${queryToUse.reportType} SIFT guidelines.` : ''), queryToUse.reportType);
+    let mainExecutionImagePart: Part | null = null;
+    if (queryToUse.imageBase64 && queryToUse.imageMimeType && currentModelConfig.supportsVision) {
+        mainExecutionImagePart = { inlineData: { data: queryToUse.imageBase64, mimeType: queryToUse.imageMimeType } };
+    }
+    let openAIHistoryForMainExecution: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+
+
+    // ---- Gemini Preprocessing Step (if enabled for OpenRouter) ----
+    if (selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing) {
+        if (!geminiAi) {
+            setError("Google Gemini API Key is required for preprocessing but not available. Please ensure 'import.meta.env.VITE_API_KEY' is set.");
+            setIsLoading(false);
+            setChatMessages(prev => [...prev, {id: uuidv4(), sender: 'ai', text: "Error: Gemini API key (VITE_API_KEY) missing for preprocessing.", timestamp: new Date(), isError: true}]);
+            return;
+        }
+        if (!openrouterApiKey && selectedProviderKey === AIProvider.OPENROUTER) {
+             setError("OpenRouter API Key is required but not available. Please ensure 'import.meta.env.VITE_OPENROUTER_API_KEY' is set.");
+             setIsLoading(false);
+             setChatMessages(prev => [...prev, {id: uuidv4(), sender: 'ai', text: "Error: OpenRouter API key (VITE_OPENROUTER_API_KEY) missing.", timestamp: new Date(), isError: true}]);
+             return;
+        }
+
+
+        const geminiPreprocessingModelId = 'gemini-2.5-flash-preview-04-17'; // Or make configurable
+        const geminiAiMessageId = uuidv4();
+        setChatMessages(prev => [...prev, { id: geminiAiMessageId, sender: 'ai', text: '', isLoading: true, timestamp: new Date(), modelId: geminiPreprocessingModelId, isInitialSIFTReport: true, originalQueryReportType: queryToUse.reportType }]);
+
+        try {
+            const geminiPromptParts: Part[] = [];
+            const geminiSystemInstruction = getSystemPromptForSelectedModel(); // Use general SIFT prompt
+            const geminiFullPromptForSift = constructFullPrompt(queryToUse.text || (queryToUse.imageMimeType ? `Input is an image of type ${queryToUse.imageMimeType}. Please describe and analyze it based on the ${queryToUse.reportType} SIFT guidelines.` : ''), queryToUse.reportType);
+            geminiPromptParts.push({text: geminiFullPromptForSift});
+
+            if (queryToUse.imageBase64 && queryToUse.imageMimeType) { // Assuming Gemini Flash supports vision
+                geminiPromptParts.push({ inlineData: { data: queryToUse.imageBase64, mimeType: queryToUse.imageMimeType } });
+            }
+            
+            const geminiConfig = {
+                tools: [{ googleSearch: {} }], // Enable Google Search for Gemini step
+                systemInstruction: geminiSystemInstruction, // Use system prompt
+                temperature: 0.5, // Fixed reasonable temp for preprocessing
+            };
+
+            const stream = await geminiAi.models.generateContentStream({
+                model: geminiPreprocessingModelId,
+                contents: { role: "user", parts: geminiPromptParts },
+                config: geminiConfig,
+            });
+
+            let accumulatedGeminiText = '';
+            let currentGroundingChunks: GroundingChunk[] = [];
+
+            for await (const chunk of stream) {
+                if (signal.aborted) {
+                  setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText + "\n\nGeneration stopped by user.", isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+                  setIsLoading(false);
+                  return;
+                }
+                const chunkText = chunk.text;
+                accumulatedGeminiText += chunkText;
+                if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+                    currentGroundingChunks = chunk.candidates[0].groundingMetadata.groundingChunks.map((gc: any) => ({ web: gc.web }));
+                }
+                setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: true, groundingSources: currentGroundingChunks } : m));
+            }
+            setGeminiPreprocessingOutputText(accumulatedGeminiText); // Save for next step
+            setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+            
+            // Prepare for OpenRouter step
+            currentProviderForMainExecution = AIProvider.OPENROUTER; // Already set, but for clarity
+            mainExecutionModelId = selectedModelId; // Use the user-selected OpenRouter model
+            mainExecutionPrompt = `The following is a SIFT analysis report generated by a previous AI (Gemini) based on the user's original query. Your task is to critically review, summarize, or provide additional insights on this report as a SIFT expert. \n\nUser's Original Query: "${queryToUse.text || 'Image was provided'}" (Report Type: ${queryToUse.reportType})\n\n---BEGIN GEMINI SIFT REPORT---\n${accumulatedGeminiText}\n---END GEMINI SIFT REPORT---\n\nPlease provide your analysis of the Gemini report:`;
+            mainExecutionImagePart = null; // Image was processed by Gemini
+            openAIHistoryForMainExecution = [
+                { role: 'system', content: getSystemPromptForSelectedModel() }, // OpenRouter system prompt
+                { role: 'user', content: mainExecutionPrompt }
+            ];
+
+        } catch (e) {
+            console.error("Gemini preprocessing API call failed:", e);
+            const errorText = `Gemini preprocessing failed: ${e instanceof Error ? e.message : String(e)}`;
+            setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m));
+            setError(errorText);
+            setIsLoading(false);
+            return;
+        }
+    }
+    // ---- End Gemini Preprocessing Step ----
+
+
+    // ---- Main Execution Step (Gemini, OpenAI, or OpenRouter after preprocessing) ----
+    const aiMessageId = uuidv4();
+    setChatMessages(prev => [...prev, { id: aiMessageId, sender: 'ai', text: '', isLoading: true, timestamp: new Date(), modelId: mainExecutionModelId, isInitialSIFTReport: !(selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing), originalQueryReportType: queryToUse.reportType }]);
+    
+    try {
+      if (currentProviderForMainExecution === AIProvider.GOOGLE_GEMINI) {
+        if (!geminiAi) {
+          setError("Google Gemini API Key is not available or empty. Please ensure 'import.meta.env.VITE_API_KEY' is set.");
+          setIsLoading(false);
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: "Error: Gemini API key (VITE_API_KEY) missing.", isLoading: false, isError: true } : m));
+          return;
+        }
+        
+        const systemInstruction = getSystemPromptForSelectedModel();
+        const geminiChat = geminiAi.chats.create({
+          model: mainExecutionModelId,
+          config: {
+            ...modelConfigParams,
+            tools: currentModelConfig?.supportsGoogleSearch ? [{ googleSearch: {} }] : undefined,
+            systemInstruction: systemInstruction,
+          },
+          history: [], // Start fresh for initial SIFT report
+        });
+        setCurrentChat(geminiChat);
+        
+        const promptPartsForChat: Part[] = [{text: mainExecutionPrompt}];
+        if (mainExecutionImagePart && currentModelConfig.supportsVision) {
+            promptPartsForChat.push(mainExecutionImagePart);
+        }
+
+        const stream = await geminiChat.sendMessageStream({ message: promptPartsForChat });
+        let accumulatedText = '';
+        let currentGroundingChunks: GroundingChunk[] = [];
+
+        for await (const chunk of stream) {
+          if (signal.aborted) {
+            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText + "\n\nGeneration stopped by user.", isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+            setIsLoading(false);
+            return;
+          }
+          const chunkText = chunk.text;
+          accumulatedText += chunkText;
+          if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+            currentGroundingChunks = chunk.candidates[0].groundingMetadata.groundingChunks.map((gc: any) => ({ web: gc.web }));
+          }
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true, groundingSources: currentGroundingChunks } : m));
+        }
+        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+
+      } else if (currentProviderForMainExecution === AIProvider.OPENAI || currentProviderForMainExecution === AIProvider.OPENROUTER) {
+        if (!openaiClient) {
+          const keyName = currentProviderForMainExecution === AIProvider.OPENAI ? "OpenAI API Key (e.g. import.meta.env.VITE_OPENAI_API_KEY)" : "OpenRouter API Key (e.g. import.meta.env.VITE_OPENROUTER_API_KEY)";
+          setError(`${keyName} is not available or empty. Please ensure it's set in your environment.`);
+          setIsLoading(false);
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: `Error: ${keyName} missing.`, isLoading: false, isError: true } : m));
+          return;
+        }
+        
+        let messagesToOpenAI: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
+        if (enableGeminiPreprocessing && currentProviderForMainExecution === AIProvider.OPENROUTER) {
+            messagesToOpenAI = openAIHistoryForMainExecution; // Already prepared
+        } else {
+            messagesToOpenAI = [{ role: 'system', content: getSystemPromptForSelectedModel() }];
+            const userOpenAIMessageContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: mainExecutionPrompt }];
+            if (mainExecutionImagePart && currentModelConfig.supportsVision && mainExecutionImagePart.inlineData) {
+                userOpenAIMessageContent.push({
+                type: 'image_url',
+                image_url: { url: `data:${mainExecutionImagePart.inlineData.mimeType};base64,${mainExecutionImagePart.inlineData.data}` },
+                });
+            }
+            messagesToOpenAI.push({ role: 'user', content: userOpenAIMessageContent });
+        }
+        
+        setCurrentOpenAIChatHistory(messagesToOpenAI);
+
+        const stream = await openaiClient.chat.completions.create({
+          model: mainExecutionModelId,
+          messages: messagesToOpenAI,
+          stream: true,
+          temperature: modelConfigParams.temperature as number ?? undefined,
+          top_p: modelConfigParams.topP as number ?? undefined,
+          max_tokens: modelConfigParams.max_tokens as number ?? undefined,
+        });
+
+        let accumulatedText = "";
+        for await (const chunk of stream) {
+          if (signal.aborted) {
+            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText + "\n\nGeneration stopped by user.", isLoading: false } : m));
+            setIsLoading(false);
+            return;
+          }
+          accumulatedText += chunk.choices[0]?.delta?.content || "";
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true } : m));
+        }
+        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false } : m));
+        setCurrentOpenAIChatHistory(prev => [...prev, {role: 'assistant', content: accumulatedText}]);
+      }
+    } catch (e) {
+      console.error("API call failed:", e);
+      const errorText = e instanceof OpenAI.APIError ? `OpenAI API Error: ${e.message} (Code: ${e.status})` : `Request failed: ${e instanceof Error ? e.message : String(e)}`;
+      setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m));
+      setError(errorText);
+    } finally {
+      setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+
+  const handleSendChatMessage = async (messageText: string, command?: 'another round' | 'read the room') => {
+    if (!isChatActive || isLoading) return;
+    setError(null);
+    setIsLoading(true);
+
+    const userMessageId = uuidv4();
+    const userMessage: ChatMessage = {
+      id: userMessageId,
+      sender: 'user',
+      text: messageText,
+      timestamp: new Date(),
+    };
+    setChatMessages(prev => [...prev, userMessage]);
+
+    const aiMessageId = uuidv4();
+    setChatMessages(prev => [...prev, { id: aiMessageId, sender: 'ai', text: '', isLoading: true, timestamp: new Date(), modelId: selectedModelId }]);
+    
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     try {
-      const resultStream = await streamSourceChat.sendMessageStream({ message: lastGenerationInput.partsToResend });
-      let currentText = '';
-      let currentGroundingSources: GroundingChunk[] | undefined = undefined;
+      const currentModelConfig = getSelectedModelConfig();
+      if (!currentModelConfig) throw new Error("Model config not found for follow-up.");
 
-      for await (const chunk of resultStream) {
-        if (isStoppingRef.current) break;
-        currentText += chunk.text;
-        currentGroundingSources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(gc => ({
-            web: gc.web ? { uri: gc.web.uri, title: gc.web.title || gc.web.uri } : undefined
-        })).filter(Boolean) as GroundingChunk[] || currentGroundingSources;
+      if (selectedProviderKey === AIProvider.GOOGLE_GEMINI) {
+        if (!currentChat) {
+          throw new Error("Chat session not initialized for Gemini.");
+        }
+        const stream = await currentChat.sendMessageStream({ message: messageText }); // Simple text message
+        let accumulatedText = "";
+        let currentGroundingChunks: GroundingChunk[] = [];
+        for await (const chunk of stream) {
+          if (signal.aborted) {
+            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText + "\n\nGeneration stopped by user.", isLoading: false, groundingSources: currentGroundingChunks } : m));
+            setIsLoading(false);
+            return;
+          }
+          accumulatedText += chunk.text;
+           if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+            currentGroundingChunks = chunk.candidates[0].groundingMetadata.groundingChunks.map((gc: any) => ({ web: gc.web }));
+          }
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true, groundingSources: currentGroundingChunks } : m));
+        }
+        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, groundingSources: currentGroundingChunks } : m));
 
-        setChatMessages(prev => prev.map(msg =>
-          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: true, groundingSources: currentGroundingSources } : msg
-        ));
-      }
+      } else if (selectedProviderKey === AIProvider.OPENAI || selectedProviderKey === AIProvider.OPENROUTER) {
+        if (!openaiClient) {
+          throw new Error("OpenAI/OpenRouter client not initialized.");
+        }
+        
+        let systemPromptContent = getSystemPromptForSelectedModel();
+        // If the last AI message was OpenRouter after Gemini preprocessing, adjust system prompt for continuity
+        const lastAiMessage = chatMessages.filter(m => m.sender === 'ai' && !m.isLoading).pop();
 
-      if (isStoppingRef.current) {
-        // Message update handled by handleStopGeneration logic (implicitly, as it sets isLoading false)
-        // Or, explicitly ensure the message is marked as stopped if handleStopGeneration wasn't fully effective
-         setChatMessages(prev => prev.map(msg =>
-          msg.id === aiResponseMessageId
-          ? {
-              ...msg,
-              text: (currentText && currentText.trim() !== '') ? currentText + "\n\n--- Generation stopped by user (during restart). ---" : "Generation stopped by user (during restart).",
-              isLoading: false,
-              isError: false
+        if (lastAiMessage && geminiPreprocessingOutputText) {
+            const lastAiModelConfig = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === lastAiMessage.modelId);
+            if (lastAiModelConfig?.provider === AIProvider.OPENROUTER && enableGeminiPreprocessing) {
+                 systemPromptContent = `You are continuing a SIFT analysis. A previous AI (Gemini) provided an initial report (which you analyzed). The user is now following up on your analysis of that Gemini report. The Gemini report was: "${geminiPreprocessingOutputText.substring(0,500)}..."`;
             }
-          : msg
-        ));
-      } else {
-        setChatMessages(prev => prev.map(msg =>
-          msg.id === aiResponseMessageId ? { ...msg, text: currentText, isLoading: false, groundingSources: currentGroundingSources } : msg
-        ));
+        }
+
+        const updatedHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: 'system', content: systemPromptContent },
+            ...currentOpenAIChatHistory.filter(m => m.role !== 'system'), // Remove old system prompt
+            { role: 'user', content: messageText }
+        ];
+        
+        setCurrentOpenAIChatHistory(updatedHistory);
+
+        const stream = await openaiClient.chat.completions.create({
+          model: selectedModelId,
+          messages: updatedHistory,
+          stream: true,
+          temperature: modelConfigParams.temperature as number ?? undefined,
+          top_p: modelConfigParams.topP as number ?? undefined,
+          max_tokens: modelConfigParams.max_tokens as number ?? undefined,
+        });
+        let accumulatedText = "";
+        for await (const chunk of stream) {
+          if (signal.aborted) {
+            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText + "\n\nGeneration stopped by user.", isLoading: false } : m));
+            setIsLoading(false);
+            return;
+          }
+          accumulatedText += chunk.choices[0]?.delta?.content || "";
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true } : m));
+        }
+        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false } : m));
+        setCurrentOpenAIChatHistory(prev => [...prev, {role: 'assistant', content: accumulatedText}]);
       }
-    } catch (err: any) {
-      if (!isStoppingRef.current) {
-        console.error("Error in restarted chat message:", err);
-        const errorMessage = err.message || 'An unexpected error occurred while regenerating the message.';
-        setError(errorMessage);
-        setChatMessages(prev => prev.map(msg =>
-          msg.id === aiResponseMessageId ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true } : msg
-        ));
-      } else {
-        console.warn("Stream error during stop (restart):", err);
-      }
+    } catch (e) {
+       console.error("Follow-up API call failed:", e);
+      const errorText = e instanceof OpenAI.APIError ? `OpenAI API Error: ${e.message} (Code: ${e.status})` : `Request failed: ${e instanceof Error ? e.message : String(e)}`;
+      setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m));
+      setError(errorText);
     } finally {
-      // Only set isLoading to false if not stopped by an external 'stop' call that already handled it
-      if (!isStoppingRef.current) {
-         setIsLoading(false);
+      setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+  
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    // Update any message that was isLoading to show "stopped by user"
+    setChatMessages(prevMessages => 
+      prevMessages.map(msg => 
+        msg.isLoading ? { ...msg, text: msg.text + "\n\nGeneration stopped by user.", isLoading: false, isError: false } : msg
+      )
+    );
+  };
+
+  const handleRestartGeneration = () => {
+    if (originalQueryForRestart) {
+      // If Gemini preprocessing was used, we need to ensure the restart logic for OpenRouter
+      // correctly uses the geminiPreprocessingOutputText.
+      // The handleStartChat function has been updated to handle this if `geminiPreprocessingOutputText` is set
+      // and the provider is OpenRouter with preprocessing enabled.
+      // For simplicity, a "restart" will re-run the *final* AI's turn from the initial multi-step query.
+      // If it was Gemini -> OpenRouter, it re-runs OpenRouter with Gemini's output.
+
+      // We need to determine what was the last AI message in the initial SIFT report generation.
+      // If it was a two-step (Gemini then OpenRouter), we want to restart the OpenRouter part.
+      // The `originalQueryForRestart` holds the *user's* initial query.
+      // `geminiPreprocessingOutputText` holds Gemini's output if that step ran.
+
+      // Modify `originalQueryForRestart` if we are restarting OpenRouter part of a chain
+      let queryForActualRestart = { ...originalQueryForRestart };
+      if (selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing && geminiPreprocessingOutputText) {
+        // Instruct OpenRouter to re-analyze the stored Gemini text.
+        queryForActualRestart.text = `The following is a SIFT analysis report generated by a previous AI (Gemini) based on the user's original query. Your task is to critically review, summarize, or provide additional insights on this report as a SIFT expert. \n\nUser's Original Query: "${originalQueryForRestart.text || 'Image was provided'}" (Report Type: ${originalQueryForRestart.reportType})\n\n---BEGIN GEMINI SIFT REPORT---\n${geminiPreprocessingOutputText}\n---END GEMINI SIFT REPORT---\n\nPlease provide your analysis of the Gemini report (restart):`;
+        queryForActualRestart.imageBase64 = null; // Image was handled by Gemini
+        queryForActualRestart.imageMimeType = null;
+        queryForActualRestart.userImagePreviewUrl = undefined;
       }
-      // If an image preview URL was created for restart, revoke it if it's for an initial SIFT
-      // This is a bit tricky as the URL might be used by the ChatMessageItem.
-      // A more robust solution would manage these URLs lifecycle carefully.
-      // For now, we won't revoke immediately to avoid breaking the display.
-      // if (lastGenerationInput.isInitialRestart && lastGenerationInput.originalQueryForInitial?.imageBase64 && userQueryMessageForDisplay?.imagePreviewUrl) {
-      //   URL.revokeObjectURL(userQueryMessageForDisplay.imagePreviewUrl);
-      // }
+
+      // Clear current chat messages except for the original user query that initiated the SIFT report.
+      const firstUserMessage = chatMessages.find(msg => msg.sender === 'user' && msg.originalQuery);
+      if (firstUserMessage) {
+        setChatMessages([firstUserMessage]); // Keep only the first user message that started it all
+      } else {
+         setChatMessages([]); // Fallback if something unexpected happened
+      }
+      setIsChatActive(true); // Ensure chat remains active
+      setCurrentChat(null); // Reset Gemini chat session state
+      setCurrentOpenAIChatHistory([]); // Reset OpenAI history
+      handleStartChat(true, queryForActualRestart);
     }
-  }, [ai, isLoading, lastGenerationInput, selectedProviderKey, handleStopGeneration, chatSession]);
+  };
 
+  const handleClearChatAndReset = (resetInputFields = true) => {
+    setChatMessages([]);
+    setCurrentChat(null);
+    setCurrentOpenAIChatHistory([]);
+    setIsChatActive(false);
+    setIsLoading(false);
+    setError(null);
+    if (resetInputFields) {
+        setUserInputText('');
+        setUserImageFile(null);
+        // reportType can remain as user's last selection
+    }
+    setOriginalQueryForRestart(null);
+    setCurrentSiftQueryDetails(null);
+    setGeminiPreprocessingOutputText(null);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
 
+  const selectedModelDetails = getSelectedModelConfig();
+  const modelSupportsVision = selectedModelDetails?.supportsVision ?? false;
+
+  const checkAPIKeysAndSetError = () => {
+    console.log('[DEBUG] checkAPIKeysAndSetError called.');
+    console.log('[DEBUG] selectedProviderKey:', selectedProviderKey);
+    console.log('[DEBUG] enableGeminiPreprocessing:', enableGeminiPreprocessing);
+    console.log('[DEBUG] state geminiApiKey:', geminiApiKey);
+    console.log('[DEBUG] state openaiApiKey:', openaiApiKey);
+    console.log('[DEBUG] state openrouterApiKey:', openrouterApiKey);
+    let keyError = null;
+    if (selectedProviderKey === AIProvider.GOOGLE_GEMINI && !geminiApiKey) {
+      keyError = "Google Gemini API Key is not available. Please ensure 'import.meta.env.VITE_API_KEY' is set in your environment.";
+    } else if (selectedProviderKey === AIProvider.OPENAI && !openaiApiKey) {
+      keyError = "OpenAI API Key is not available. Please ensure 'import.meta.env.VITE_OPENAI_API_KEY' is set in your environment.";
+    } else if (selectedProviderKey === AIProvider.OPENROUTER) {
+      if (!openrouterApiKey) {
+        keyError = "OpenRouter API Key is not available. Please ensure 'import.meta.env.VITE_OPENROUTER_API_KEY' is set in your environment.";
+      }
+      if (enableGeminiPreprocessing && !geminiApiKey) {
+        const openRouterError = keyError ? `${keyError} Additionally, ` : "";
+        keyError = `${openRouterError}Google Gemini API Key (import.meta.env.VITE_API_KEY) is required for preprocessing with OpenRouter but not available. Please ensure it's set.`;
+      }
+    }
+    if (keyError) {
+      console.log('[DEBUG] Setting error in checkAPIKeysAndSetError:', keyError);
+    }
+    setError(keyError);
+    return !keyError; // Returns true if keys are okay for the current selection
+  };
+
+  // Effect to check API keys when provider or preprocessing mode changes
   useEffect(() => {
-     if (chatMessagesContainerRef.current && chatMessages.length > 0) {
-        chatMessagesContainerRef.current.scrollTop = chatMessagesContainerRef.current.scrollHeight;
-    }
-  }, [chatMessages]);
+    checkAPIKeysAndSetError();
+  }, [selectedProviderKey, geminiApiKey, openaiApiKey, openrouterApiKey, enableGeminiPreprocessing]);
 
-  const isChatActive = chatMessages.length > 0;
-  const currentModelDetails = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === selectedModelId);
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 text-slate-100">
-      <header className="w-full p-4 sm:p-6 text-center shrink-0 border-b border-slate-700">
-        <div className="flex items-center justify-center space-x-3 mb-2">
-          <span className="text-3xl sm:text-4xl" aria-hidden="true">{SIFT_ICON}</span>
-          <h1 className="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-500">
-            SIFT Toolbox
+    <div className="flex flex-col md:flex-row h-screen max-h-screen bg-slate-900 text-slate-100">
+      <Sidebar
+        availableModels={AVAILABLE_PROVIDERS_MODELS}
+        selectedProviderKey={selectedProviderKey}
+        onSelectProvider={handleSelectProvider}
+        selectedModelId={selectedModelId}
+        onSelectModelId={handleSelectModel}
+        modelConfigParams={modelConfigParams}
+        onModelConfigParamChange={handleModelConfigChange}
+        onClearChatAndReset={() => handleClearChatAndReset(true)}
+        isChatActive={isChatActive}
+        enableGeminiPreprocessing={enableGeminiPreprocessing}
+        onToggleGeminiPreprocessing={handleToggleGeminiPreprocessing}
+      />
+
+      {/* Main Content Area */}
+      <main className="flex-grow flex flex-col p-3 md:p-6 overflow-hidden h-full">
+        <header className="mb-4 flex-shrink-0">
+          <h1 className="text-2xl md:text-3xl font-bold text-sky-400 flex items-center">
+            <span className="mr-2 text-3xl md:text-4xl">🔍</span>
+            SIFT Toolbox Report Builder
           </h1>
-        </div>
-        <p className="text-slate-400 text-base sm:text-lg">
-          Interactive SIFT analysis and chat. Current Model: {currentModelDetails?.name || 'N/A'}
-        </p>
-      </header>
-      
-      <div className="flex flex-1 overflow-hidden">
-        {currentSiftQueryDetails && isChatActive && (
-            <UserQueryPanel 
+           <p className="text-sm text-slate-400">
+            Provider: <span className="font-semibold text-indigo-400">{selectedProviderKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+            {selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing && " (with Gemini Preprocessing)"}
+            {selectedModelDetails && ` | Model: ${selectedModelDetails.name}`}
+          </p>
+        </header>
+
+        {error && <ErrorAlert message={error} />}
+        
+        {!isChatActive ? (
+          <div className="flex-grow overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-800">
+            <InputForm
+              userInputText={userInputText}
+              setUserInputText={setUserInputText}
+              userImageFile={userImageFile}
+              setUserImageFile={setUserImageFile}
+              reportType={reportType}
+              setReportType={setReportType}
+              onStartChat={() => { 
+                if (checkAPIKeysAndSetError()) {
+                  handleStartChat();
+                }
+              }}
+              isLoading={isLoading}
+              isChatActive={isChatActive}
+              onStopGeneration={handleStopGeneration}
+              selectedModelSupportsVision={modelSupportsVision}
+            />
+            {isLoading && <LoadingSpinner reportType={reportType} onTimeout={handleStopGeneration} />}
+          </div>
+        ) : (
+          <div className="flex-grow flex min-h-0"> {/* Ensure chat interface can shrink */}
+            {currentSiftQueryDetails && (
+              <UserQueryPanel
                 userInputText={currentSiftQueryDetails.userInputText}
                 userImagePreviewUrl={currentSiftQueryDetails.userImagePreviewUrl}
                 reportType={currentSiftQueryDetails.reportType}
-            />
-        )}
-        
-        <div className="flex-1 flex flex-col overflow-y-auto relative">
-          <main className="w-full max-w-7xl mx-auto flex-grow flex flex-col p-4 sm:px-6 lg:px-8 py-6">
-            {!apiKey && selectedProviderKey === AIProvider.GOOGLE_GEMINI && (
-              <div className="p-4">
-                  <ErrorAlert message="Critical: API Key (VITE_GEMINI_API_KEY environment variable) is not set or accessible for Google Gemini. The application cannot function for this provider." />
-              </div>
+              />
             )}
-
-            {!isChatActive && (selectedProviderKey === AIProvider.GOOGLE_GEMINI ? (apiKey && ai) : true) && (
-              <div className="bg-slate-800 shadow-2xl rounded-xl p-6 sm:p-8">
-                <InputForm
-                  userInputText={userInputText}
-                  setUserInputText={setUserInputText}
-                  userImageFile={userImageFile}
-                  setUserImageFile={setUserImageFile}
-                  reportType={reportType}
-                  setReportType={setReportType}
-                  onStartChat={handleStartChat}
-                  isLoading={isLoading}
-                  isChatActive={isChatActive}
-                  onStopGeneration={handleStopGeneration}
-                />
-              </div>
-            )}
-            
-            {isLoading && !isChatActive && (
-              <>
-                <LoadingSpinner />
-              </>
-            )} 
-            {error && (
-              <>
-                <ErrorAlert message={error} />
-              </>
-            )}
-
-            {isChatActive && (selectedProviderKey === AIProvider.GOOGLE_GEMINI ? (apiKey && ai) : true) && (
+            <div className="flex-grow pl-0 md:pl-4 min-w-0"> {/* Ensure chat interface takes remaining space and can shrink */}
               <ChatInterface
+                ref={chatContainerRef}
                 messages={chatMessages}
                 onSendMessage={handleSendChatMessage}
                 isLoading={isLoading}
                 onStopGeneration={handleStopGeneration}
                 onRestartGeneration={handleRestartGeneration}
-                canRestart={!!lastGenerationInput && !isLoading && chatMessages.some(msg => msg.sender === 'ai' && (!msg.isLoading || msg.isError))}
-                ref={chatMessagesContainerRef}
+                canRestart={originalQueryForRestart !== null && !isLoading}
               />
-            )}
-          </main>
-        </div>
+            </div>
+          </div>
+        )}
 
-        <Sidebar
-            availableModels={AVAILABLE_PROVIDERS_MODELS}
-            selectedProviderKey={selectedProviderKey}
-            onSelectProvider={(providerKey) => {
-                setSelectedProviderKey(providerKey);
-                const firstModelOfNewProvider = AVAILABLE_PROVIDERS_MODELS.find(m => m.provider === providerKey);
-                if (firstModelOfNewProvider) {
-                    setSelectedModelId(firstModelOfNewProvider.id);
-                    const newParams: ConfigurableParams = {};
-                    firstModelOfNewProvider.parameters.forEach(p => newParams[p.key] = p.defaultValue);
-                    setModelConfigParams(newParams);
-                } else {
-                    setSelectedModelId(''); 
-                    setModelConfigParams({});
-                }
-            }}
-            selectedModelId={selectedModelId}
-            onSelectModelId={(modelId) => {
-                setSelectedModelId(modelId);
-                const newModel = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === modelId);
-                if (newModel) {
-                    const newParams: ConfigurableParams = {};
-                    newModel.parameters.forEach(p => newParams[p.key] = p.defaultValue);
-                    setModelConfigParams(newParams);
-                }
-            }}
-            modelConfigParams={modelConfigParams}
-            onModelConfigParamChange={(key, value) => setModelConfigParams(prev => ({...prev, [key]: value}))}
-            onClearChatAndReset={handleClearChatAndReset}
-            isChatActive={isChatActive}
-         />
-      </div>
-
-      <footer className="w-full max-w-7xl mx-auto p-4 text-center text-slate-500 text-xs sm:text-sm shrink-0 border-t border-slate-700">
-        <p>&copy; {new Date().getFullYear()} SIFT Toolbox Report Builder. Powered by {selectedProviderKey.replace('_', ' ')}.</p>
-      </footer>
+        <footer className="mt-auto pt-3 text-center text-xs text-slate-500 flex-shrink-0">
+          <p>Powered by GenAI | SIFT Methodology. Ensure API keys are configured in your environment.</p>
+           <p>
+            {geminiApiKey ? "Gemini Key: Loaded" : <span className="text-red-400">Gemini Key: Not Loaded</span>} | 
+            {openaiApiKey ? "OpenAI Key: Loaded" : <span className="text-red-400">OpenAI Key: Not Loaded</span>} |
+            {openrouterApiKey ? "OpenRouter Key: Loaded" : <span className="text-red-400">OpenRouter Key: Not Loaded</span>}
+          </p>
+        </footer>
+      </main>
     </div>
-  )
+  );
 };
 
 export default App;
