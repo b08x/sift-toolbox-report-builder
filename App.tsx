@@ -611,7 +611,13 @@ const App: React.FC = () => {
         if (!currentChat) {
           throw new Error("Chat session not initialized for Gemini.");
         }
-        const stream = await currentChat.sendMessageStream({ message: messageText }); // Simple text message
+        let stream: GenerateContentResponse | undefined;
+        if (currentGeminiCacheName) {
+          const options = { tools: [{ cachedContent: { name: currentGeminiCacheName } }] };
+          stream = await currentChat.sendMessageStream({ message: messageText }, options);
+        } else {
+          stream = await currentChat.sendMessageStream({ message: messageText });
+        }
         let accumulatedText = "";
         let currentGroundingChunks: GroundingChunk[] = [];
         for await (const chunk of stream) {
