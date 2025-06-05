@@ -41,7 +41,7 @@ export const AVAILABLE_PROVIDERS_MODELS: AIModelConfig[] = [
     ],
   },
   {
-    id: 'gemini-2.5-pro-preview-05-06',
+    id: 'gemini-2.5-pro-preview-06-05',
     name: 'Gemini 2.5 Pro (Preview)',
     provider: AIProvider.GOOGLE_GEMINI,
     supportsGoogleSearch: true,
@@ -80,8 +80,47 @@ export const AVAILABLE_PROVIDERS_MODELS: AIModelConfig[] = [
     ],
   },
   {
-    id: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash',
+    id: 'gemini-2.0-flash-001',
+    name: 'Gemini 2.0 Flash-001',
+    provider: AIProvider.GOOGLE_GEMINI,
+    supportsGoogleSearch: true,
+    supportsVision: false,
+    parameters: [
+      { 
+        key: 'temperature', 
+        label: 'Temperature', 
+        type: 'slider', 
+        min: 0, 
+        max: 1, 
+        step: 0.01, 
+        defaultValue: 0.7,
+        description: 'Controls randomness. Lower for more predictable, higher for more creative.'
+      },
+      { 
+        key: 'topP', 
+        label: 'Top-P', 
+        type: 'slider', 
+        min: 0, 
+        max: 1, 
+        step: 0.01, 
+        defaultValue: 0.95,
+        description: 'Nucleus sampling. Considers tokens with probability mass adding up to topP.'
+      },
+      { 
+        key: 'topK', 
+        label: 'Top-K', 
+        type: 'slider', 
+        min: 1, 
+        max: 100, 
+        step: 1, 
+        defaultValue: 40,
+        description: 'Considers the top K most probable tokens.'
+      },
+    ],
+  },
+  {
+    id: 'gemini-2.0-flash-live-001',
+    name: 'Gemini 2.0 Flash Live-001',
     provider: AIProvider.GOOGLE_GEMINI,
     supportsGoogleSearch: true,
     supportsVision: true,
@@ -119,10 +158,88 @@ export const AVAILABLE_PROVIDERS_MODELS: AIModelConfig[] = [
     ],
   },
   {
-    id: 'gemma-3n-e4b-it',
-    name: 'Gemma 3n E4B',
+    id: 'gemini-2.0-flash-lite-001',
+    name: 'Gemini 2.0 Flash Lite-001',
+    provider: AIProvider.GOOGLE_GEMINI,
+    supportsGoogleSearch: false,
+    supportsVision: false,
+    parameters: [
+      { 
+        key: 'temperature', 
+        label: 'Temperature', 
+        type: 'slider', 
+        min: 0, 
+        max: 1, 
+        step: 0.01, 
+        defaultValue: 0.7,
+        description: 'Controls randomness. Lower for more predictable, higher for more creative.'
+      },
+      { 
+        key: 'topP', 
+        label: 'Top-P', 
+        type: 'slider', 
+        min: 0, 
+        max: 1, 
+        step: 0.01, 
+        defaultValue: 0.95,
+        description: 'Nucleus sampling. Considers tokens with probability mass adding up to topP.'
+      },
+      { 
+        key: 'topK', 
+        label: 'Top-K', 
+        type: 'slider', 
+        min: 1, 
+        max: 100, 
+        step: 1, 
+        defaultValue: 40,
+        description: 'Considers the top K most probable tokens.'
+      },
+    ],
+  },
+  {
+    id: 'gemini-2.0-flash-thinking-exp-01-21',
+    name: 'Gemini 2.0 Flash Thinking Exp 01-21',
     provider: AIProvider.GOOGLE_GEMINI,
     supportsGoogleSearch: true,
+    supportsVision: true,
+    parameters: [
+      { 
+        key: 'temperature', 
+        label: 'Temperature', 
+        type: 'slider', 
+        min: 0, 
+        max: 1, 
+        step: 0.01, 
+        defaultValue: 0.7,
+        description: 'Controls randomness. Lower for more predictable, higher for more creative.'
+      },
+      { 
+        key: 'topP', 
+        label: 'Top-P', 
+        type: 'slider', 
+        min: 0, 
+        max: 1, 
+        step: 0.01, 
+        defaultValue: 0.95,
+        description: 'Nucleus sampling. Considers tokens with probability mass adding up to topP.'
+      },
+      { 
+        key: 'topK', 
+        label: 'Top-K', 
+        type: 'slider', 
+        min: 1, 
+        max: 100, 
+        step: 1, 
+        defaultValue: 40,
+        description: 'Considers the top K most probable tokens.'
+      },
+    ],
+  },
+  {
+    id: 'gemma-3-27b-it',
+    name: 'Gemma 3 27B',
+    provider: AIProvider.GOOGLE_GEMINI,
+    supportsGoogleSearch: false,
     supportsVision: true,
     parameters: [
       { 

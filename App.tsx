@@ -340,7 +340,7 @@ const App: React.FC = () => {
         }
 
 
-        const geminiPreprocessingModelId = 'gemini-2.5-flash-preview-04-17'; // Or make configurable
+        const geminiPreprocessingModelId = 'gemini-2.5-flash-preview-05-20'; // Or make configurable
         const geminiAiMessageId = uuidv4();
         setChatMessages(prev => [...prev, { id: geminiAiMessageId, sender: 'ai', text: '', isLoading: true, timestamp: new Date(), modelId: geminiPreprocessingModelId, isInitialSIFTReport: true, originalQueryReportType: queryToUse.reportType }]);
 
