@@ -5,6 +5,8 @@ require 'sinatra/cross_origin'
 require 'dotenv/load' # Loads environment variables from .env
 require_relative 'config/database' # Load database configuration
 
+class MyCustomError < StandardError; end
+
 configure do
   enable :cross_origin
 
@@ -39,6 +41,60 @@ set :allow_origin, ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
 set :allow_methods, [:get, :post, :put, :delete, :options]
 set :allow_headers, ['Content-Type', 'Authorization', 'X-Requested-With']
 set :expose_headers, ['Content-Type'] # Optional: Add any other headers you want to expose
+
+# Centralized Error Handling
+# Provides consistent JSON error responses and logs issues.
+
+# Explanation: Sinatra's `error` blocks allow you to define specific handlers
+# for different types of exceptions that occur during request processing.
+# When an exception is raised, Sinatra searches for an `error` block that
+# matches the exception's class. If a match is found, the block is executed.
+# If no specific handler is found, Sinatra falls back to more generic handlers
+# (like `StandardError`) or its default error page.
+
+# Custom Application Error
+error MyCustomError do |e|
+  status 400 # Bad Request (or a more specific code like 422 if appropriate)
+  content_type :json
+
+  error_details = { type: e.class.name, message: e.message }
+  settings.logger.error "MyCustomError: #{e.message}"
+  settings.logger.debug e.backtrace.join("\n") if settings.development? # Log backtrace in development
+
+  { error: error_details }.to_json
+end
+
+# Sinatra::NotFound (404) Handler
+# This handler catches errors raised when a route is not found.
+error Sinatra::NotFound do
+  status 404
+  content_type :json
+
+  error_details = { type: 'Sinatra::NotFound', message: "Endpoint not found: #{request.path_info}" }
+  settings.logger.warn "404 Not Found: #{request.path_info}" # Log as warning, less severe than an error
+
+  { error: error_details }.to_json
+end
+
+# Generic StandardError Handler (Catch-all)
+# This should generally be the last error handler defined, to catch any
+# exceptions not handled by more specific blocks.
+error StandardError do |e|
+  status 500 # Internal Server Error
+  content_type :json
+
+  error_message = if settings.development?
+                    "Internal Server Error: #{e.message}"
+                  else
+                    "An unexpected error occurred. Please try again later."
+                  end
+  error_details = { type: e.class.name, message: error_message }
+
+  settings.logger.error "StandardError: #{e.message}"
+  settings.logger.error e.backtrace.join("\n") # Log full backtrace for StandardError
+
+  { error: error_details }.to_json
+end
 
 # Support for preflight requests
 # The OPTIONS method is used by browsers to send a "preflight" request to the server
@@ -86,6 +142,23 @@ get '/api/test_log' do
   content_type :json
   { message: "Test log messages created. Check your logs." }.to_json
 end
+
+# --- Example Routes for Error Handling Testing ---
+
+# Route to test MyCustomError handler
+get '/api/test_custom_error' do
+  settings.logger.info "Triggering MyCustomError..."
+  raise MyCustomError, "This is a test of the custom error handling."
+end
+
+# Route to test StandardError handler
+get '/api/test_standard_error' do
+  settings.logger.info "Triggering a StandardError..."
+  raise StandardError, "This is a test of the generic StandardError handling."
+end
+
+# Note: To test Sinatra::NotFound, simply try to access any undefined route,
+# for example: /api/this-route-does-not-exist
 
 # Placeholder for future API routes
 # namespace '/api/v1' do
