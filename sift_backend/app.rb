@@ -1,4 +1,5 @@
 require 'sinatra'
+require 'logger'
 require 'json'
 require 'sinatra/cross_origin'
 require 'dotenv/load' # Loads environment variables from .env
@@ -6,6 +7,29 @@ require_relative 'config/database' # Load database configuration
 
 configure do
   enable :cross_origin
+
+  # Logger configuration
+  environment = ENV['RACK_ENV'] || 'development'
+  set :environment, environment.to_sym
+
+  if settings.environment == :production
+    Dir.mkdir('log') unless File.exist?('log')
+    # Log Rotation:
+    # In a production environment, log files can grow very large over time.
+    # Log rotation is a process that automatically archives or deletes old log
+    # files and starts new ones. This prevents disk space issues and makes
+    # logs easier to manage.
+    # Log rotation is typically handled by external utilities like 'logrotate'
+    # on Linux systems or other platform-specific logging services. It's an
+    # important operational consideration for production deployments.
+    set :logger, Logger.new('log/production.log')
+    settings.logger.level = Logger::INFO
+  else
+    set :logger, Logger.new(STDOUT)
+    settings.logger.level = Logger::DEBUG
+  end
+
+  settings.logger.info "Logger initialized for #{settings.environment} environment"
 end
 
 # CORS Configuration
@@ -49,8 +73,18 @@ end
 
 # Basic health check route
 get '/api/health' do
+  settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
   content_type :json
   { message: 'OK', timestamp: Time.now.iso8601 }.to_json
+end
+
+# New route for testing logging
+get '/api/test_log' do
+  settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
+  settings.logger.warn "This is a test warning message."
+  settings.logger.error "This is a test error message."
+  content_type :json
+  { message: "Test log messages created. Check your logs." }.to_json
 end
 
 # Placeholder for future API routes
