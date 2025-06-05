@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Chat, GenerateContentResponse, Part } from "@google/genai"; // Removed APIError
+import { GoogleGenAI, Chat, GenerateContentResponse, Part, GoogleGenerativeAICacheManager } from "@google/genai"; // Removed APIError
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 import ReactMarkdown from 'react-markdown';
@@ -46,6 +46,8 @@ const App: React.FC = () => {
 
   const [geminiAi, setGeminiAi] = useState<GoogleGenAI | null>(null);
   const [openaiClient, setOpenaiClient] = useState<OpenAI | null>(null);
+  const [geminiCacheManager, setGeminiCacheManager] = useState<GoogleGenerativeAICacheManager | null>(null);
+  const [currentGeminiCacheName, setCurrentGeminiCacheName] = useState<string | null>(null);
   
   const [currentChat, setCurrentChat] = useState<Chat | null>(null);
   const [currentOpenAIChatHistory, setCurrentOpenAIChatHistory] = useState<OpenAI.Chat.Completions.ChatCompletionMessageParam[]>([]);
@@ -113,17 +115,23 @@ const App: React.FC = () => {
           try {
             const ga = new GoogleGenAI({ apiKey: geminiApiKey });
             setGeminiAi(ga);
+            const cacheManager = new GoogleGenerativeAICacheManager({ apiKey: geminiApiKey });
+            setGeminiCacheManager(cacheManager);
+            console.log('[DEBUG] GoogleGenerativeAICacheManager initialized successfully.');
           } catch (e) {
-            console.error("Failed to initialize GoogleGenAI:", e);
-            setError("Failed to initialize Google Gemini client. Check API key and network.");
+            console.error("Failed to initialize GoogleGenAI or CacheManager:", e);
+            setError("Failed to initialize Google Gemini client or Cache Manager. Check API key and network. Caching may not work.");
             setGeminiAi(null);
+            setGeminiCacheManager(null);
           }
         } else {
           setGeminiAi(null);
+          setGeminiCacheManager(null);
           // Error set by API key check later if needed by an operation
         }
       } else {
         setGeminiAi(null);
+        setGeminiCacheManager(null);
       }
 
       // Initialize OpenAI client (for OpenAI or OpenRouter)
@@ -685,6 +693,7 @@ const App: React.FC = () => {
     setOriginalQueryForRestart(null);
     setCurrentSiftQueryDetails(null);
     setGeminiPreprocessingOutputText(null);
+    setCurrentGeminiCacheName(null); // Add this line
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;

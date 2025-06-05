@@ -40,6 +40,7 @@ export interface ChatMessage {
   modelId?: string; 
   isInitialSIFTReport?: boolean; // Flag for initial SIFT report that might be sectioned
   originalQueryReportType?: ReportType; // Report type associated with this specific AI message if it's an initial report
+  siftReportCacheName?: string; // New field
 }
 
 // For the new left query panel
