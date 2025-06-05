@@ -12,9 +12,9 @@ require_relative 'config/database' # Load database configuration
 # end
 
 # Basic health check route
-get '/health' do
+get '/api/health' do
   content_type :json
-  { status: 'ok' }.to_json
+  { message: 'OK', timestamp: Time.now.iso8601 }.to_json
 end
 
 # Placeholder for future API routes
