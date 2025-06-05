@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { AIProvider, AIModelConfig, ModelParameter, ConfigurableParams } from '../types';
-import { SliderInput } from './SliderInput'; // Assuming SliderInput is in the same directory
+import { SliderInput } from './SliderInput'; 
 
 interface SidebarProps {
   availableModels: AIModelConfig[];
@@ -13,6 +13,8 @@ interface SidebarProps {
   onModelConfigParamChange: (key: string, value: number | string) => void;
   onClearChatAndReset: () => void;
   isChatActive: boolean;
+  enableGeminiPreprocessing: boolean; // New prop
+  onToggleGeminiPreprocessing: (enabled: boolean) => void; // New prop
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,6 +27,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onModelConfigParamChange,
   onClearChatAndReset,
   isChatActive,
+  enableGeminiPreprocessing,
+  onToggleGeminiPreprocessing,
 }) => {
   const handleProviderChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newProviderKey = event.target.value as AIProvider;
@@ -61,12 +65,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             id="providerSelect"
             value={selectedProviderKey}
             onChange={handleProviderChange}
-            disabled={uniqueProviders.length <= 1} // Disable if only one provider
+            disabled={uniqueProviders.length <= 1} 
             className="w-full p-2 text-sm bg-slate-700 border border-slate-600 rounded-md shadow-sm focus:ring-sky-500 focus:border-sky-500 text-slate-100 disabled:bg-slate-600 disabled:opacity-70"
           >
             {uniqueProviders.map(provider => (
               <option key={provider} value={provider}>
-                {provider.replace('_', ' ')} 
+                {provider.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
               </option>
             ))}
           </select>
@@ -81,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             id="modelSelect"
             value={selectedModelId}
             onChange={handleModelChange}
-            disabled={modelsForSelectedProvider.length === 0}
+            disabled={modelsForSelectedProvider.length === 0 || isChatActive} // Disable if chat active
             className="w-full p-2 text-sm bg-slate-700 border border-slate-600 rounded-md shadow-sm focus:ring-sky-500 focus:border-sky-500 text-slate-100 disabled:bg-slate-600 disabled:opacity-70"
           >
             {modelsForSelectedProvider.length > 0 ? (
@@ -96,11 +100,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </select>
         </div>
 
+        {/* Gemini Preprocessing Toggle for OpenRouter */}
+        {selectedProviderKey === AIProvider.OPENROUTER && (
+          <div className="pt-3 border-t border-slate-700/50">
+            <label htmlFor="geminiPreprocessingToggle" className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                id="geminiPreprocessingToggle"
+                checked={enableGeminiPreprocessing}
+                onChange={(e) => onToggleGeminiPreprocessing(e.target.checked)}
+                disabled={isChatActive}
+                className="h-4 w-4 rounded border-slate-500 text-sky-500 focus:ring-sky-400 accent-sky-500 disabled:opacity-50"
+              />
+              <span className="text-sm font-medium text-indigo-300">Gemini Preprocessing</span>
+            </label>
+            <p className="text-xs text-slate-500 italic mt-1">
+              Use Gemini for initial SIFT & grounding, then send its output to OpenRouter.
+              Requires both Google Gemini & OpenRouter API keys. Changing this clears chat.
+            </p>
+          </div>
+        )}
+
+
         {/* Dynamic Model Parameters */}
         {selectedModelConfig && selectedModelConfig.parameters.length > 0 && (
-          <div>
-            <h3 className="text-sm font-medium text-indigo-300 mb-2 pt-2 border-t border-slate-700/50">
-              Model Parameters ({selectedModelConfig.name})
+          <div className="pt-3 border-t border-slate-700/50">
+            <h3 className="text-sm font-medium text-indigo-300 mb-2">
+              Parameters ({selectedModelConfig.name})
             </h3>
             <div className="space-y-3">
               {selectedModelConfig.parameters.map((param: ModelParameter) => {
@@ -117,18 +143,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onChange={(value) => onModelConfigParamChange(param.key, value)}
                       description={param.description}
                       unit={param.unit}
-                      disabled={isChatActive} // Disable if chat is active to prevent mid-chat changes
+                      disabled={isChatActive} 
                     />
                   );
                 }
-                // Add other parameter types here (number, text, select) if needed
                 return null; 
               })}
             </div>
           </div>
         )}
          {isChatActive && (
-             <p className="text-xs text-amber-400 italic">Model parameters are locked during an active chat. Clear chat to apply changes.</p>
+             <p className="text-xs text-amber-400 italic pt-2">Model selection & parameters are locked during an active chat. Clear chat to change.</p>
          )}
 
 
@@ -141,14 +166,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             Clear Chat & Reset Form
           </button>
-          <p className="text-xs text-slate-500 italic mt-1">
-            Clears current chat. New settings apply on next "Start Chat".
-          </p>
         </div>
       </div>
 
       <div className="mt-auto pt-6 text-center text-xs text-slate-500">
-        <p>SIFT Toolbox v1.1</p>
+        <p>SIFT Toolbox v1.2</p>
       </div>
     </aside>
   );

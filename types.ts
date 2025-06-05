@@ -1,4 +1,3 @@
-
 export enum ReportType {
   FULL_CHECK = 'Full Check',
   CONTEXT_REPORT = 'Context Report',
@@ -36,6 +35,7 @@ export interface ChatMessage {
     imageMimeType?: string | null;
     imageBase64?: string | null;
     reportType?: ReportType; // Added to store report type of original query
+    userImagePreviewUrl?: string; // Added to ensure consistency with OriginalQueryInfo for display
   };
   modelId?: string; 
   isInitialSIFTReport?: boolean; // Flag for initial SIFT report that might be sectioned
@@ -54,11 +54,14 @@ export interface OriginalQueryInfo {
   imageMimeType?: string | null;
   imageBase64?: string | null;
   reportType: ReportType;
+  userImagePreviewUrl?: string; // Added to store the original image preview URL for restarts
 }
 
 // New types for model selection and parameters
 export enum AIProvider {
   GOOGLE_GEMINI = 'GOOGLE_GEMINI',
+  OPENAI = 'OPENAI',
+  OPENROUTER = 'OPENROUTER',
   // HUGGING_FACE = 'HUGGING_FACE', 
   // OPENROUTER = 'OPENROUTER',   
   // MISTRAL = 'MISTRAL',         
@@ -88,7 +91,8 @@ export interface AIModelConfig {
   name: string; 
   provider: AIProvider;
   parameters: ModelParameter[];
-  supportsGoogleSearch?: boolean; 
+  supportsGoogleSearch?: boolean; // Specific to Gemini for now
+  supportsVision?: boolean; // General flag for image input capability
   defaultSystemPrompt?: string; 
 }
 
