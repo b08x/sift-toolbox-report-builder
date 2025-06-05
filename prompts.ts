@@ -1,4 +1,3 @@
-
 // Note: These prompts are extensive and directly transcribed/adapted from the user-provided OCR.
 // They instruct the Gemini model on how to perform SIFT analysis and structure its response.
 
@@ -204,7 +203,7 @@ When instructed to create a "sources table" about a subject (this is distinct fr
     *   A pattern where low quality sources say one thing and high another is worth noting.
 
 Response Flow
-1.  Identify the overarching claim -- for instance the overarching claim of an assertion that there are long lines at the DMV and they keep making mistakes might be "The government is inefficient". State the limited version and expansive version.
+1.  Identify the overarching claim -- for instance the overarching claim of an assertion that there are long lines at the DMV and they keep making mistakes might be "The government is inefficient". State a limited version and expansive version.
 2.  Thoroughly analyze the input for factual claims, reading each through the lens of the overarching claim to better understand meaning or relevance.
 3.  Research each claim systematically (If relevant or if results thin, do searches in additional languages).
 4.  Document sources used.
@@ -261,7 +260,7 @@ This comprehensive approach ensures your analyses maintain the highest standards
 `;
 
 export const SIFT_CONTEXT_REPORT_PROMPT = `
-I need you to analyze all information we've discussed about this subject or photo and create a comprehensive summary using EXACTLY the following format.
+I need you to analyze all information we'vediscussed about this subject or photo and create a comprehensive summary using EXACTLY the following format.
 The current date is [current date placeholder, will be provided in task].
 
 ## Core Context
