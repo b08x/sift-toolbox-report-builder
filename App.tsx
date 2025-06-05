@@ -391,7 +391,36 @@ const App: React.FC = () => {
                 setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: true, groundingSources: currentGroundingChunks } : m));
             }
             setGeminiPreprocessingOutputText(accumulatedGeminiText); // Save for next step
-            setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+
+            // After stream processing for preprocessing, attempt to cache
+            if (geminiCacheManager) {
+              try {
+                console.log('[DEBUG] Attempting to cache Gemini preprocessing response.');
+                const cachedContent = await geminiCacheManager.createCachedContent({
+                  model: `models/${geminiPreprocessingModelId}`, // Ensure "models/" prefix
+                  systemInstruction: { role: "system", parts: [{text: geminiSystemInstruction }] },
+                  contents: [
+                    { role: "user", parts: geminiPromptParts },
+                    { role: "model", parts: [{ text: accumulatedGeminiText }] }
+                  ],
+                  ttlSeconds: 3600
+                });
+                if (cachedContent && cachedContent.name) {
+                  console.log('[DEBUG] Gemini preprocessing response cached successfully. Cache name:', cachedContent.name);
+                  setCurrentGeminiCacheName(cachedContent.name); // Store cache name
+                  setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks, siftReportCacheName: cachedContent.name } : m));
+                } else {
+                  console.warn('[DEBUG] Preprocessing cache creation did not return expected result.');
+                  setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+                }
+              } catch (cacheError) {
+                console.error("Failed to cache Gemini preprocessing response:", cacheError);
+                setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+              }
+            } else {
+              // No cache manager, just update the message
+              setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+            }
             
             // Prepare for OpenRouter step
             currentProviderForMainExecution = AIProvider.OPENROUTER; // Already set, but for clarity
@@ -462,7 +491,36 @@ const App: React.FC = () => {
           }
           setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true, groundingSources: currentGroundingChunks } : m));
         }
-        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+        // After stream processing, attempt to cache
+        if (geminiCacheManager) {
+          try {
+            console.log('[DEBUG] Attempting to cache main Gemini response.');
+            const cachedContent = await geminiCacheManager.createCachedContent({
+              model: `models/${mainExecutionModelId}`, // Model name needs to be prefixed with models/ for cache
+              systemInstruction: { role: "system", parts: [{ text: systemInstruction }] },
+              contents: [
+                { role: "user", parts: promptPartsForChat },
+                { role: "model", parts: [{ text: accumulatedText }] }
+              ],
+              ttlSeconds: 3600
+            });
+            if (cachedContent && cachedContent.name) {
+              console.log('[DEBUG] Main Gemini response cached successfully. Cache name:', cachedContent.name);
+              setCurrentGeminiCacheName(cachedContent.name);
+              setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks, siftReportCacheName: cachedContent.name } : m));
+            } else {
+              // Cache creation might not return a name or object as expected, proceed without cache name
+              console.warn('[DEBUG] Cache creation did not return expected result, proceeding without cache name.');
+              setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+            }
+          } catch (cacheError) {
+            console.error("Failed to cache main Gemini response:", cacheError);
+            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+          }
+        } else {
+          // No cache manager, just update the message
+          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
+        }
 
       } else if (currentProviderForMainExecution === AIProvider.OPENAI || currentProviderForMainExecution === AIProvider.OPENROUTER) {
         if (!openaiClient) {
