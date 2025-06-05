@@ -119,7 +119,7 @@ ${groundingSourcesText}
 
 
   const renderContent = () => {
-    if (isInitialSIFTReport && originalQueryReportType === ReportType.FULL_CHECK && !isError && !isLoading) {
+    if (isInitialSIFTReport && !isError && !isLoading) {
       const parsedSections = parseReportIntoSections(text);
       if (parsedSections.length > 0) {
         return (
