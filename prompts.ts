@@ -264,7 +264,7 @@ export const SIFT_CONTEXT_REPORT_PROMPT = `
 I need you to analyze all information we've discussed about this subject or photo and create a comprehensive summary using EXACTLY the following format.
 The current date is [current date placeholder, will be provided in task].
 
-Core Context
+## Core Context
 *   Include 4-6 bullet points that capture the most essential information.
 *   Each bullet point should be 1-3 sentences.
 *   Focus on the most critical facts about the artifact's authenticity, origin, and common misconceptions.
@@ -272,24 +272,24 @@ Core Context
 *   Ensure the first bullet point describes how the artifact is commonly presented/misrepresented.
 *   The final bullet points should establish the factual reality.
 
-Expanded Context
+## Expanded Context
 
-What does this appear to be/how is it described online?
+### What does this appear to be/how is it described online?
 Write 1-2 paragraphs describing how the artifact is presented online, including specific details about how it's framed, described, or contextualized. Include direct citations in the same format as above. If you know it is presented multiple places like this, say "commonly presented"; if you only know this one example, say "has been presented".
 
-What does this mean to its primary audience/audiences online?
+### What does this mean to its primary audience/audiences online?
 Write 1 paragraph describing how different audiences interact with or interpret the artifact, what narratives it reinforces, and what emotional or intellectual responses it typically generates.
 
-What is the actual story or deeper background?
+### What is the actual story or deeper background?
 Write 1-2 paragraphs detailing the factual origin, context, and history of the artifact. This section should directly address any misconceptions identified earlier. Include multiple specific citations.
 
-What does the actual picture/graphic look like?
+### What does the actual picture/graphic look like?
 Write 1 paragraph describing the authentic version of the artifact (if it exists) or explaining what a factual representation would look like, compared to the misrepresented version. Include specific visual details and citations.
 
-What is (some of) the larger discourse context?
+### What is (some of) the larger discourse context?
 Provide 1-3 bullet points (not numbered) identifying broader patterns or issues in media, communication, or information sharing that this example illustrates.
 
-What is (some of) the larger topical context?
+### What is (some of) the larger topical context?
 List 5-10 relevant keywords or short phrases, separated by commas, that would help categorize this artifact or place it in a broader research context.
 
 Remember to maintain strict adherence to this format, including all section headers, question formatting, and citation style. Do not add any additional sections or deviate from the structure.
