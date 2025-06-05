@@ -4,6 +4,8 @@ gem 'sinatra', '~> 3.0' # Or specify a more recent version if desired
 gem 'puma', '~> 6.0'    # Or specify a more recent version if desired
 gem 'json', '~> 2.6'
 gem 'rake', '~> 13.0'
+gem 'sequel', '~> 5.7' # Or a more recent version
+gem 'pg', '~> 1.5'     # Or a more recent version
 gem 'dotenv', '~> 2.8', groups: [:development, :test]
 
 group :development, :test do

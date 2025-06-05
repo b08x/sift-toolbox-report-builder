@@ -1,0 +1,111 @@
+# sift_backend/Rakefile
+require 'sequel'
+require 'dotenv/load' # Load .env variables for Rake tasks, if any are needed for DB connection
+require_relative 'config/database' # Load database connection
+
+# Ensure the migration extension is loaded
+Sequel.extension :migration
+
+namespace :db do
+  desc "Run database migrations"
+  task :migrate, [:version] do |t, args|
+    migrations_dir = File.join(__dir__, 'db', 'migrations')
+    target_version = args[:version] ? args[:version].to_i : nil
+
+    if !Dir.exist?(migrations_dir)
+      puts "Migrations directory not found: #{migrations_dir}"
+      next
+    end
+
+    puts "Running migrations..."
+    if target_version
+      puts "Migrating to version #{target_version}"
+      Sequel::Migrator.run(DB, migrations_dir, target: target_version)
+    else
+      puts "Migrating to latest"
+      Sequel::Migrator.run(DB, migrations_dir)
+    end
+    puts "Migrations complete."
+
+    # Automatically update schema.rb after migration (optional but good practice)
+    # Rake::Task['db:schema:dump'].invoke if Rake::Task.task_defined?('db:schema:dump')
+  end
+
+  desc "Rollback database migrations"
+  task :rollback, [:steps] do |t, args|
+    migrations_dir = File.join(__dir__, 'db', 'migrations')
+    steps = args[:steps] ? args[:steps].to_i : 1 # Default to 1 step back
+
+    if !Dir.exist?(migrations_dir)
+      puts "Migrations directory not found: #{migrations_dir}"
+      next
+    end
+
+    puts "Rolling back #{steps} migration(s)..."
+    current_version = Sequel::Migrator.get_current_migration_version(DB)
+    target_version = current_version - steps
+
+    if target_version < 0
+        # If rolling back further than the first migration, it migrates down to nothing (version 0)
+        puts "Target version is less than 0. This will revert all migrations."
+        Sequel::Migrator.run(DB, migrations_dir, target: 0)
+    else
+        Sequel::Migrator.run(DB, migrations_dir, target: target_version)
+    end
+    puts "Rollback complete. Current version is now: #{Sequel::Migrator.get_current_migration_version(DB)}"
+  end
+
+  desc "Check migration status"
+  task :status do
+    migrations_dir = File.join(__dir__, 'db', 'migrations')
+
+    if !Dir.exist?(migrations_dir)
+      puts "Migrations directory not found: #{migrations_dir}"
+      next
+    end
+
+    migrator = Sequel::TimestampMigrator.new(DB, migrations_dir, {}) # or IntegerMigrator if using integers
+
+    puts "Migration Status:"
+    puts "-----------------"
+    if migrator.is_current?
+      puts "Database is up to date."
+    else
+      puts "Database is NOT up to date."
+      # You could add more detailed status here, e.g., pending migrations.
+      # This requires more complex logic to list files and compare with schema_migrations table.
+    end
+    puts "Current Schema Version: #{DB[:schema_migrations].max(:filename) || 'None'}"
+
+    # A more detailed status showing each migration file and if it's applied:
+    # files = Dir["#{migrations_dir}/*.rb"].map { |f| File.basename(f, '.rb') }.sort
+    # applied_migrations = DB[:schema_migrations].select_map(:filename).to_set
+    # files.each do |f_name|
+    #   status = applied_migrations.include?(f_name) ? "Applied" : "Pending"
+    #   puts "#{f_name}: #{status}"
+    # end
+  end
+
+  # Optional: Task to create a new migration file with a timestamp
+  # desc "Create a new migration file: NAME=my_migration_name"
+  # task :create_migration do
+  #   name = ENV['NAME']
+  #   raise "Please specify migration name, e.g., NAME=create_users" unless name && !name.empty?
+  #   migrations_dir = File.join(__dir__, 'db', 'migrations')
+  #   Sequel::Migrator.create_migration_file(migrations_dir, name, :timestamp) # or :integer for sequential numbers
+  #   puts "Created migration file for '#{name}' in #{migrations_dir}"
+  # end
+
+  # Optional: Task to dump schema to a file (e.g., db/schema.rb)
+  # desc "Dump the database schema to db/schema.rb"
+  # task :schema_dump do
+  #   require 'sequel/extensions/schema_dumper'
+  #   schema = DB.dump_schema_migration(foreign_keys: false) # Or true, depending on preference
+  #   schema_file = File.join(__dir__, 'db', 'schema.rb')
+  #   File.write(schema_file, schema)
+  #   puts "Database schema dumped to #{schema_file}"
+  # end
+end
+
+# Default task
+task default: ['db:migrate']
