@@ -1,6 +1,7 @@
 require 'sinatra'
 require 'json'
 require 'dotenv/load' # Loads environment variables from .env
+require_relative 'config/database' # Load database configuration
 
 # In a more complex application, you would require route files here:
 # Dir[File.join(__dir__, 'app', 'routes', '*.rb')].each { |file| require file }
