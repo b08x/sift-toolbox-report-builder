@@ -27,7 +27,7 @@ const parseReportIntoSections = (markdownText: string): ParsedReportSection[] =>
     remainingText = remainingText.substring(preambleMatch[0].length).trim();
   }
 
-  const sectionSplitRegex = /(?=^(?:##|###)\s+.*$)/gm;
+  const sectionSplitRegex = /(?=^###? .*$)/gm;
   
   const parts = remainingText.split(sectionSplitRegex).filter(part => part.trim() !== '');
 
