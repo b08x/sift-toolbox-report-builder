@@ -10,7 +10,7 @@ interface ChatMessageItemProps {
 }
 
 // Parser for SIFT Full Check report
-const parseSiftFullCheckReport = (markdownText: string): ParsedReportSection[] => {
+const parseReportIntoSections = (markdownText: string): ParsedReportSection[] => {
   const sections: ParsedReportSection[] = [];
   let remainingText = markdownText;
 
@@ -27,16 +27,16 @@ const parseSiftFullCheckReport = (markdownText: string): ParsedReportSection[] =
     remainingText = remainingText.substring(preambleMatch[0].length).trim();
   }
 
-  const sectionSplitRegex = /(?=^(?:##\s*\d+\.\s*(?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?|###\s*(?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?):?\s*$)/gm;
+  const sectionSplitRegex = /(?=^(?:##|###)\s+.*$)/gm;
   
   const parts = remainingText.split(sectionSplitRegex).filter(part => part.trim() !== '');
 
   for (const part of parts) {
-    const headerMatch = part.match(/^(##\s*\d+\.\s*((?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?)|###\s*((?:✅|⚠️|🛠️|📌|🔴|📜|🏆|💡)?\s*.*?)):?\s*$/m);
+    const headerMatch = part.match(/^(##\s+(.*?)|###\s+(.*?)):?\s*$/m);
     
     if (headerMatch) {
       const rawTitleLine = headerMatch[0].trim();
-      const isH2 = rawTitleLine.startsWith('##');
+      const isH2 = rawTitleLine.startsWith('## '); // Check for space after ##
       let title = (isH2 ? headerMatch[2] : headerMatch[3]) || "Untitled Section";
       title = title.trim().replace(/:$/, '').trim();
 
@@ -120,7 +120,7 @@ ${groundingSourcesText}
 
   const renderContent = () => {
     if (isInitialSIFTReport && originalQueryReportType === ReportType.FULL_CHECK && !isError && !isLoading) {
-      const parsedSections = parseSiftFullCheckReport(text);
+      const parsedSections = parseReportIntoSections(text);
       if (parsedSections.length > 0) {
         return (
           <div className="space-y-4">
