@@ -25,3 +25,19 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     profiles:
       - dev
+
+  postgres_db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./sift_backend/db/init:/docker-entrypoint-initdb.d
+    environment:
+      - POSTGRES_USER=app_user
+      - POSTGRES_PASSWORD=app_password
+      - POSTGRES_DB=app_db
+    restart: unless-stopped
+
+volumes:
+  pg_data:
