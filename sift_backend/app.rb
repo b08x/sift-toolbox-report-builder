@@ -297,6 +297,8 @@ post '/api/sift/initiate' do
   end
 end
 
+# This route provides Server-Sent Events (SSE) for chat responses.
+# AIService.continue_sift_chat is responsible for yielding SSE-formatted data chunks and errors.
 post '/api/sift/chat' do
   settings.logger.info "POST /api/sift/chat - Received request from #{request.ip}"
   params_json_string = nil
@@ -380,6 +382,15 @@ post '/api/sift/chat' do
         out << chunk
       end
       settings.logger.info "AIService.continue_sift_chat stream completed for client: #{request.ip}"
+
+      # Send a completion event to signal the end of the stream
+      unless out.closed?
+        out << "event: complete
+data: #{ { message: 'Chat stream finished' }.to_json }
+
+"
+        settings.logger.info "Sent 'complete' event to client: #{request.ip}"
+      end
 
     rescue StandardError => e
       settings.logger.error "Error during SSE streaming or AIService.continue_sift_chat execution: #{e.class.name} - #{e.message}"
