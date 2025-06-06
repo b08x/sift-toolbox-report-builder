@@ -1,5 +1,5 @@
 require 'minitest/autorun'
-require_relative '../../app/services/agent_manager' # Adjust path as necessary
+require_relative '../../server/app/services/agent_manager' # Adjust path as necessary
 require 'fileutils' # For creating temp files/dirs
 
 class TestAgentManager < Minitest::Test

@@ -2,7 +2,7 @@
 
 require 'json'
 require 'ruby_llm' # Assuming ruby_llm is loaded via Bundler or accessible
-require_relative '../lib/prompts' # Adjust path if necessary
+require_relative 'prompt_manager'
 require_relative '../lib/image_handler' # Adjust path if necessary
 
 module AIService
@@ -51,7 +51,7 @@ module AIService
         # 2. Set system instructions (applies to the whole conversation)
         # This should ideally be set once if the chat object is long-lived.
         # For stateless calls, set it every time.
-        system_prompt = Prompts.get_prompt(:sift_chat_system_prompt)
+        system_prompt = PromptManager.get_prompt(:sift_chat_system_prompt)
         chat.with_instructions(system_prompt)
 
         # 3. Load chat history if provided
@@ -84,11 +84,11 @@ module AIService
           # or we might need to append a standard "Image is attached" message.
           # For now, we assume the prompt template handles user_input_text.
           prompt_key = "sift_#{report_type.downcase}_prompt".to_sym
-          current_user_prompt_text = Prompts.get_prompt(prompt_key, user_input: user_input_text)
+          current_user_prompt_text = PromptManager.get_prompt_with_user_input(prompt_key, user_input: user_input_text)
         end
 
         unless current_user_prompt_text && !current_user_prompt_text.strip.empty?
-          # Handle cases where prompt might be empty if user_input_text is nil and not handled by Prompts module
+          # Handle cases where prompt might be empty if user_input_text is nil and not handled by PromptManager
           error_message = "AIService: Error - User input text is empty or could not form a valid prompt."
           puts error_message
           yield "event: error
@@ -178,7 +178,7 @@ data: #{error_json}
           chat.with_instructions(system_instruction_override, replace: true)
         else
           puts "AIService: Using default SIFT chat system prompt."
-          chat.with_instructions(Prompts.get_prompt(:sift_chat_system_prompt), replace: true)
+          chat.with_instructions(PromptManager.get_prompt(:sift_chat_system_prompt), replace: true)
         end
 
         # 3. Load chat history

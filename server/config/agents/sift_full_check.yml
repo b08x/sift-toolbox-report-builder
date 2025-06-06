@@ -2,4 +2,6 @@ meta:
   name: SIFT Full Check
 behaviors:
   interaction:
-    directive: "Generated <%= current_date %>. User query: <%= user_query %>."
+    directive: "You are a helpful assistant for the SIFT application. Be concise and helpful. Generated <%= current_date %>.<% if defined?(user_query) && user_query %> User query: <%= user_query %>.<% end %>"
+  boot:
+    directive: "Perform a full check on the following input:<% if defined?(user_input) && user_input %> <%= user_input %><% end %>"
