@@ -236,13 +236,26 @@ post '/api/sift/initiate' do
             selected_model_id: selected_model_id,
             model_config_params: model_config_params,
             chat_history: []
-          ) do |chunk|
+          ) do |content_or_event|
             if out.closed?
               settings.logger.warn("Stream closed by client during AIService.generate_sift_stream with image")
-              break
+              break # Exit the loop if client disconnected
             end
-            settings.logger.debug("Streaming chunk: #{chunk}")
-            out << chunk
+
+            if content_or_event.start_with?("event:")
+              # This is an error event already formatted by AIService
+              settings.logger.debug("Streaming pre-formatted event from AIService: #{content_or_event.strip}")
+              out << content_or_event
+            elsif content_or_event.is_a?(String) && !content_or_event.strip.empty?
+              # This is raw content from AIService, needs formatting
+              sse_payload = { delta: content_or_event }.to_json
+              sse_message = "data: #{sse_payload}\n\n"
+              settings.logger.debug("Streaming formatted data to client: #{sse_message.strip}")
+              out << sse_message
+            else
+              # Potentially empty string or unexpected content, log it but don't send
+              settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
+            end
           end
           called_service = true
         end
@@ -259,13 +272,26 @@ post '/api/sift/initiate' do
           selected_model_id: selected_model_id,
           model_config_params: model_config_params,
           chat_history: []
-        ) do |chunk|
+        ) do |content_or_event|
           if out.closed?
             settings.logger.warn("Stream closed by client during AIService.generate_sift_stream without image")
-            break
+            break # Exit the loop if client disconnected
           end
-          settings.logger.debug("Streaming chunk: #{chunk}")
-          out << chunk
+
+          if content_or_event.start_with?("event:")
+            # This is an error event already formatted by AIService
+            settings.logger.debug("Streaming pre-formatted event from AIService: #{content_or_event.strip}")
+            out << content_or_event
+          elsif content_or_event.is_a?(String) && !content_or_event.strip.empty?
+            # This is raw content from AIService, needs formatting
+            sse_payload = { delta: content_or_event }.to_json
+            sse_message = "data: #{sse_payload}\n\n"
+            settings.logger.debug("Streaming formatted data to client: #{sse_message.strip}")
+            out << sse_message
+          else
+            # Potentially empty string or unexpected content, log it but don't send
+            settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
+          end
         end
         called_service = true
       end
@@ -373,13 +399,26 @@ post '/api/sift/chat' do
         modelConfigParams: model_config_params,
         preprocessingOutputText: preprocessing_output_text,
         systemInstructionOverride: system_instruction_override
-      ) do |chunk|
+      ) do |content_or_event|
         if out.closed?
-          settings.logger.warn "SSE stream for /api/sift/chat closed by client, cannot send chunk: #{chunk.strip}"
-          break
+          settings.logger.warn("SSE stream for /api/sift/chat closed by client.")
+          break # Exit the loop if client disconnected
         end
-        settings.logger.debug "Streaming chunk for /api/sift/chat: #{chunk.strip}"
-        out << chunk
+
+        if content_or_event.start_with?("event:")
+          # This is an error event already formatted by AIService
+          settings.logger.debug("Streaming pre-formatted event from AIService for /api/sift/chat: #{content_or_event.strip}")
+          out << content_or_event
+        elsif content_or_event.is_a?(String) && !content_or_event.strip.empty?
+          # This is raw content from AIService, needs formatting
+          sse_payload = { delta: content_or_event }.to_json
+          sse_message = "data: #{sse_payload}\n\n"
+          settings.logger.debug("Streaming formatted data to client for /api/sift/chat: #{sse_message.strip}")
+          out << sse_message
+        else
+          # Potentially empty string or unexpected content, log it but don't send
+          settings.logger.debug("Received empty or unexpected content from AIService for /api/sift/chat: '#{content_or_event}' - not sending.")
+        end
       end
       settings.logger.info "AIService.continue_sift_chat stream completed for client: #{request.ip}"
 
