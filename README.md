@@ -1,236 +1,468 @@
-# SIFT Toolbox Report Builder
+# SIFT-Toolbox
 
-An interactive web application that provides chat-based fact-checking and contextualization using the SIFT methodology and Google's Gemini AI. This tool helps users analyze claims, images, and artifacts through conversational interaction to determine their authenticity and provide proper context.
-
-## About SIFT
-
-This application is based on the SIFT methodology derived from [Check, Please!](https://checkplease.neocities.org/),created by Mike Caulfield, a resource for digital media literacy. SIFT stands for:
-
-- **S**top
-- **I**nvestigate the source
-- **F**ind better coverage
-- **T**race claims, quotes and media to the original context
-
-The SIFT method is a quick, simple approach to evaluating information online, helping users determine the credibility of sources and claims they encounter.
+SIFT-Toolbox is a full-stack application designed to assist users in fact-checking and contextualizing information using the SIFT (Stop, Investigate the source, Find better coverage, Trace claims) methodology, enhanced with AI capabilities.
 
 ## Features
 
-### 🎯 Interactive Chat Interface
+* **AI-Powered SIFT Analysis:** Leverages various AI models to guide users through the SIFT process.
+* **Dynamic Model Configuration:** Fetches available AI models and their configurations dynamically from the backend.
+* **Image Upload and Analysis:** Supports image uploads for analysis, including validation for file type and size.
+* **Structured AI Prompts:** Utilizes detailed YAML-based prompt configurations for tailored AI responses.
+* **Client-Server Architecture:** React/TypeScript frontend with a Ruby/Sinatra backend.
+* **Real-time AI Responses:** Uses Server-Sent Events (SSE) for streaming AI outputs.
+* **Database Integration:** PostgreSQL backend for data persistence.
+* **Docker Support:** Includes [`docker-compose.yml`](docker-compose.yml:1) for easy setup and deployment.
 
-- **Conversational Analysis**: Engage in back-and-forth dialogue with the AI to refine your fact-checking
-- **Streaming Responses**: See results as they're generated with the ability to stop generation mid-stream
-- **Context Persistence**: The AI maintains conversation history for follow-up questions
-- **Quick Commands**:
-  - "Another Round" 🔁 - Request additional searches and sources
-  - "Read the Room" 🧐 - Get expert consensus analysis on the topic
+## Architecture
 
-### 🔍 Three Report Types
+* **Frontend (`client/`):** Built with React, TypeScript, and Vite. Handles user interaction and displays AI-generated SIFT analysis.
+* **Backend (`server/`):** A Ruby Sinatra application. Manages AI model interactions, SIFT logic, API key handling, and database operations.
 
-1. **Full Check** - A comprehensive fact-checking report that includes:
-   - ✅ Verified Facts Table
-   - ⚠️ Errors and Corrections Table
-   - 🛠️ Corrections Summary
-   - 📌 Potential Leads for further investigation
-   - 🔴 Source Reliability Assessment
-   - 📜 Revised Summary with corrections
-   - 🏆 Fact-Checker's Verdict
-   - 💡 Research Tips
+## Project Structure
 
-2. **Context Report** - A structured summary providing:
-   - Core context with essential facts
-   - How the artifact appears online
-   - Audience interpretation and impact
-   - Actual story and background
-   - Visual description comparison
-   - Larger discourse and topical context
+The project is organized into two main directories:
 
-3. **Community Note** - A concise Twitter-style community note (under 700 characters) with supporting sources
+* `client/`: Contains all frontend code (React, TypeScript).
+* `server/`: Contains all backend code (Ruby, Sinatra).
+* [`docker-compose.yml`](docker-compose.yml:1): For running the application using Docker.
+* [`.env.example`](.env.example:1): Template for environment variables required by the backend (located at project root).
 
-### 🎨 Enhanced User Interface
-
-- **Split View Layout**: Current query panel on the left, chat interface on the right
-- **Sectioned Report Display**: Full Check reports are automatically parsed into collapsible sections
-- **Real-time Model Configuration**: Adjust AI parameters (temperature, top-p, top-k) via sidebar
-- **Visual Query Reference**: Keep track of your original text and images while chatting
-- **Copy Functionality**: Easy copying of individual messages or entire reports
-
-### 🚀 Key Capabilities
-
-- **Text Analysis**: Analyze claims, statements, URLs, or any text content
-- **Image Verification**: Upload and analyze images for authenticity and context
-- **Source Evaluation**: Automatic assessment of source credibility using a 1-5 rating scale
-- **Evidence Categorization**: Classification of evidence types
-- **Grounding Sources**: Integration with Google Search for real-time fact verification
-- **Markdown Rendering**: Well-formatted responses with proper citations and hyperlinks
-- **Stop Generation**: Cancel ongoing AI responses at any time
-- **Restart Generation**: Retry the last AI response, useful after interruptions or for refining results.
-
-## How It Works
-
-1. **Initial Query**: Users provide text claims and/or upload images to analyze
-2. **Choose Report Type**: Select from Full Check, Context Report, or Community Note
-3. **Start Chat**: Begin the interactive SIFT analysis session
-4. **Conversation**: Ask follow-up questions, request additional sources, or dive deeper
-5. **Export**: Copy formatted reports for use elsewhere
-
-## Setup Instructions
+## Getting Started
 
 ### Prerequisites
 
-- Node.js (v20 or higher)
-- Docker (optional, for containerized deployment)
-- A Google Gemini API key with access to grounding/search features
+* Node.js and npm (for the frontend)
+* Ruby and Bundler (for the backend)
+* Docker and Docker Compose (optional, for running with Docker)
 
-### Local Development
+### Backend Setup (`server/`)
 
-1. Clone the repository:
+1. **Navigate to the server directory:**
 
-   ```bash
-   git clone [repository-url]
-   cd sift-toolbox-report-builder
-   ```
+    ```bash
+    cd server
+    ```
 
-2. Install dependencies:
+2. **Install dependencies:**
 
-   ```bash
-   npm install
-   ```
+    ```bash
+    bundle install
+    ```
 
-3. Create a `.env` file in the root directory:
+3. **Environment Variables:**
+    Copy the [`.env.example`](.env.example:1) file from the project root to `server/.env` and fill in your API keys and other necessary configurations.
 
-   ```env
-   VITE_GEMINI_API_KEY=your_gemini_api_key_here
-   # Optional:
-   # VITE_OPENAI_API_KEY=your_openai_api_key_here
-   # VITE_OPENROUTER_API_KEY=your_openrouter_api_key_here
-   ```
+    ```bash
+    # When inside the server/ directory:
+    cp ../.env.example .env
+    ```
 
-4. Run the development server:
+    The `dotenv` gem, used by the backend, will load `server/.env` in development.
+    The following "API Key Management" section details this further.
+4. **Database Setup:**
+    Ensure PostgreSQL is running and configured as per your `server/.env` file. Then, run migrations:
 
-   ```bash
-   npm run dev
-   ```
+    ```bash
+    bundle exec rake db:migrate
+    ```
 
-5. Open your browser and navigate to `http://localhost:5173`
+5. **Running the Backend Server:**
 
-### Docker Deployment
+    ```bash
+    bundle exec ruby app.rb
+    ```
 
-1. Build and run with Docker Compose:
+    The server will typically start on `http://localhost:4567`.
 
-   ```bash
-   # With environment variable
-   # Example for one key:
-   # GEMINI_API_KEY=your_api_key_here docker-compose up
-   # Example for multiple keys (if using OpenAI and/or OpenRouter):
-   GEMINI_API_KEY=your_gemini_api_key OPENAI_API_KEY=your_openai_key OPENROUTER_API_KEY=your_openrouter_key docker-compose up
+### Frontend Setup (`client/`)
 
-   # Or using .env file
-   # Create or update your .env file in the project root with lines like:
-   # GEMINI_API_KEY=your_gemini_api_key_here
-   # # Optional:
-   # # OPENAI_API_KEY=your_openai_api_key_here
-   # # OPENROUTER_API_KEY=your_openrouter_api_key_here
-   #
-   # Then run:
-   docker-compose up
-   ```
+1. **Navigate to the client directory:**
 
-2. Access the application at `http://localhost:3000`
+    ```bash
+    cd client
+    ```
 
-### Manual Docker Build
+2. **Install dependencies:**
+
+    ```bash
+    npm install
+    ```
+
+3. **Running the Frontend Development Server:**
+
+    ```bash
+    npm run dev
+    ```
+
+    The frontend will typically be available at `http://localhost:5173` and will proxy API requests to the backend.
+
+### Using Docker Compose (Alternative)
+
+1. Ensure Docker and Docker Compose are installed.
+2. **Environment Variables for Docker Compose:**
+    Copy the root [`.env.example`](.env.example:1) to a root `.env` file and populate it with your API keys.
+
+    ```bash
+    # Run from the project root directory
+    cp .env.example .env
+    ```
+
+    The [`docker-compose.yml`](docker-compose.yml:1) is configured to use this root `.env` file to provide environment variables to the services.
+3. Start the application:
+
+    ```bash
+    docker-compose up --build
+    ```
+
+    This will build the images and start the frontend and backend services.
+
+## Development
+
+Common development commands (refer to [`CLAUDE.md`](CLAUDE.md:1) for more details):
+
+### Frontend (`client/`)
 
 ```bash
-# Build the image
-docker build -f docker/Dockerfile -t sift-toolbox .
-
-# Run the container
-docker run -p 3000:80 -e GEMINI_API_KEY=your_gemini_api_key_here -e OPENAI_API_KEY=your_openai_key -e OPENROUTER_API_KEY=your_openrouter_key sift-toolbox
+cd client
+npm run dev       # Development server
+npm run build     # Production build
+npm run preview   # Preview production build
+npx tsc --noEmit  # TypeScript checking
 ```
 
-## Technical Stack
+### Backend (`server/`)
 
-- **Frontend**: React 19 with TypeScript
-- **Styling**: Tailwind CSS (via CDN)
-- **AI Integration**: Google Gemini API, OpenAI API, and OpenRouter (accessing a diverse range of models including Google's Gemini series, OpenAI's GPT series, Anthropic's Claude, Microsoft's Phi, and more).
-- **Build Tool**: Vite
-- **Containerization**: Docker with Nginx
-- **Chat Management**: Custom implementation with streaming support
-- **Markdown Rendering**: react-markdown with GitHub Flavored Markdown
-- **State Management**: React hooks with local state
-- **Unique IDs**: UUID v4 for message tracking
+```bash
+cd server
+bundle install            # Install dependencies
+bundle exec rake db:migrate # Database migrations
+bundle exec ruby app.rb   # Run server (development)
+bundle exec rubocop       # Linting
+bundle exec rubocop -a    # Auto-fix linting issues
+```
 
-## Configuration Options
+***
 
-### Model Parameters (Adjustable via Sidebar)
+## API Key Management for the Sinatra Backend
 
-- **Temperature** (0-1): Controls randomness in responses
-- **Top-P** (0-1): Nucleus sampling parameter
-- **Top-K** (1-100): Limits token selection pool
+This section provides guidance on how to securely manage API keys for external services like Google Gemini, OpenAI, and OpenRouter within the Ruby Sinatra backend (`server/`) of the SIFT-Toolbox application.
 
-### Environment Variables
+## 1. Why API Keys Should Never Be Hardcoded
 
-- `VITE_GEMINI_API_KEY`: Your Google Gemini API key (development)
-- `VITE_OPENAI_API_KEY`: Your OpenAI API key (development, optional)
-- `VITE_OPENROUTER_API_KEY`: Your OpenRouter API key (development, optional)
-- `GEMINI_API_KEY`: Your Google Gemini API key (Docker runtime)
-- `OPENAI_API_KEY`: Your OpenAI API key (Docker runtime, optional)
-- `OPENROUTER_API_KEY`: Your OpenRouter API key (Docker runtime, optional)
+Hardcoding API keys directly into your source code is a significant security risk. Here's why:
 
-## Evidence Evaluation Framework
+* **Exposure in Version Control:** If your code is hosted on a platform like GitHub or GitLab, hardcoded keys become part of your repository's history. Even if you remove them later, they can still be found in previous commits.
+* **Accidental Leaks:** Keys can be accidentally leaked through shared code snippets, error messages, or logs if they are present directly in the codebase.
+* **Difficult to Rotate:** If a key is compromised, changing it becomes a cumbersome process. You'd need to modify the code, re-deploy the application, and ensure all previous versions with the old key are no longer accessible.
+* **Unauthorized Access:** Anyone who gains access to your source code (e.g., a disgruntled employee, a compromised developer account, or a public repository) will also gain access to your API keys. This can lead to unauthorized use of paid services, resulting in financial loss or data breaches.
+* **Environment-Specific Keys:** Often, you'll use different API keys for development, staging, and production environments. Hardcoding makes managing these different keys impractical and error-prone.
 
-The app uses a sophisticated evidence evaluation system:
+Storing keys outside the codebase, typically in environment variables, is the recommended best practice.
 
-| Evidence Type | Credibility Rating | Key Questions |
-|--------------|-------------------|---------------|
-| Documentation | Based on direct artifacts | Is it authentic and unaltered? |
-| Personal Testimony | Based on direct experience | Was the person present? Are they reliable? |
-| Statistics | Based on method and representativeness | Is the method sound? Is the sample representative? |
-| Analysis | Based on expertise | Does the person have relevant expertise? |
-| Reporting | Based on journalistic method | Does the source cite sources? Is it corroborated? |
-| Common Knowledge | Based on widespread agreement | Is this actually common knowledge? |
+## 2. Loading API Keys from Environment Variables
 
-## Chat Commands
+Ruby provides easy access to environment variables through the `ENV` object. This is the standard way to supply sensitive information like API keys to your application.
 
-- **"another round"**: Requests additional searches with potentially conflicting viewpoints
-- **"read the room"**: Analyzes expert consensus and different schools of thought
-- **Clear Chat & Reset**: Start a fresh analysis session
+For example, if you have an environment variable named `GEMINI_API_KEY`, you can access it in your Ruby code like this:
 
-## Docker Runtime Configuration
+```ruby
+gemini_key = ENV['GEMINI_API_KEY']
+openai_key = ENV['OPENAI_API_KEY']
+openrouter_key = ENV['OPENROUTER_API_KEY']
 
-The Docker deployment uses a special runtime configuration system that injects the API key at container startup, avoiding the need to rebuild the image for different API keys. This is handled through the `docker-entrypoint.sh` script.
+if gemini_key.nil?
+  puts "GEMINI_API_KEY is not set."
+  # Handle missing key, perhaps by exiting or logging an error
+end
 
-## Credits & Attribution
+# Use the keys to interact with the respective services
+# puts "Using Gemini Key: #{gemini_key}"
+```
 
-This application implements the SIFT methodology from [Check, Please!](https://checkplease.neocities.org/), created by Mike Caulfield. Check, Please! is an essential resource for digital media literacy and fact-checking education.
+**To make these variables available to your application:**
 
-The SIFT method and educational materials are used with acknowledgment to the original creators and their work in promoting information literacy.
+* **In Production/Staging (e.g., Heroku, AWS, Docker):** You'll typically set these environment variables through your hosting platform's dashboard, configuration files (e.g., Docker Compose), or command-line interface.
+* **In Local Development:** You can set them in your shell before running the application (e.g., `export GEMINI_API_KEY="your_key_here"`), or use a tool like `dotenv` to load them from a file, which we'll cover next.
 
-## Limitations
+## 3. Using the `dotenv` Gem for Local Development
 
-- Requires a valid Gemini API key with grounding/search capabilities
-- API usage is subject to Google's rate limits and quotas
-- The accuracy of reports depends on the quality of available online sources
-- Generated reports should be treated as one input into a human-checked process
-- Supports models from Google Gemini, OpenAI, and various providers via OpenRouter. (Support for direct Hugging Face and Mistral integration coming soon).
+The `dotenv` gem is very useful for managing environment variables in your local development environment. It loads variables from a `.env` file into `ENV` when your application starts.
 
-## Contributing
+**Steps to use `dotenv`:**
 
-Contributions are welcome! Please feel free to submit issues or pull requests to improve the tool.
+1. **Add `dotenv` to your `server/Gemfile`:**
+    If you haven't already, add it to your `server/Gemfile`:
 
-## Roadmap
+    ```ruby
+    gem 'dotenv'
+    ```
 
-See [ROADMAP.md](./ROADMAP.md) for planned features including:
+    And then run `bundle install` in your `server/` directory.
 
-- Export to PDF with smart formatting
-- Persistent storage with RAG retrieval
-- Multi-provider support (Hugging Face, Mistral)
-- Document and URL analysis
-- Enhanced UI with cognitive load management
+2. **Create a `server/.env` file:**
+    Create a file named `.env` in your `server/` directory (i.e., `server/.env`). **This file should never be committed to version control.** Ensure `server/.env` is listed in your root `.gitignore` file.
+    You can copy the root [`.env.example`](.env.example:1) to `server/.env` and replace placeholder values:
 
-## License
+    ```bash
+    # Run from the project root directory:
+    cp .env.example server/.env
+    # Or, if you are already in the server/ directory:
+    # cp ../.env.example .env
+    ```
 
-[Your License Here]
+    Your `server/.env` file would look something like this:
 
----
+    ```
+    GEMINI_API_KEY="actual_gemini_key_value"
+    OPENAI_API_KEY="actual_openai_key_value"
+    OPENROUTER_API_KEY="actual_openrouter_key_value"
+    ```
 
-**Note**: This tool is designed to assist in fact-checking and information verification. Always apply critical thinking and verify important information through multiple sources. The AI-generated reports may contain errors and should be treated as a starting point for further investigation rather than definitive conclusions.
+3. **Load `dotenv` in your application:**
+    Require `dotenv` early in your application's lifecycle, typically in your main backend application file (`server/app.rb`) or an environment setup file (e.g., `server/config/environment.rb`).
+
+    For the Sinatra application (`server/app.rb`), you might add this:
+
+    ```ruby
+    require 'sinatra'
+    require 'dotenv/load' # Loads .env file automatically
+
+    # Your application code follows
+    # API keys are now available via ENV['API_KEY_NAME']
+    # puts "Gemini Key from .env: #{ENV['GEMINI_API_KEY']}"
+    ```
+
+    Or, if you prefer to control when it loads (e.g., only in development):
+
+    ```ruby
+    require 'sinatra'
+
+    if Sinatra::Base.development?
+      require 'dotenv/load'
+    end
+    ```
+
+By following these steps, your API keys and other configurations in `server/.env` will be loaded into `ENV` automatically when you run your Sinatra app locally (within the `server/` directory), making them accessible just like any other environment variable. Remember, `server/.env` is for local development convenience; in production, you should set environment variables directly on your server or hosting platform.
+
+## 4. Centralized Configuration Access
+
+To make API keys and other settings easily accessible and consistently managed throughout your application, you can use a simple Ruby module or class. This approach centralizes how configuration is loaded and used.
+
+**Example: `Config` Module**
+
+Create a module, for instance, in `server/config/config.rb`:
+
+```ruby
+# server/config/config.rb
+
+module Config
+  class MissingKeyError < StandardError; end
+
+  # Fetches the Gemini API Key from environment variables.
+  # Raises MissingKeyError if not found.
+  def self.gemini_api_key
+    ENV['GEMINI_API_KEY'] || raise(MissingKeyError, "GEMINI_API_KEY is not set in the environment. Please add it to your .env file or environment variables.")
+  end
+
+  # Fetches the OpenAI API Key from environment variables.
+  # Raises MissingKeyError if not found.
+  def self.openai_api_key
+    ENV['OPENAI_API_KEY'] || raise(MissingKeyError, "OPENAI_API_KEY is not set in the environment. Please add it to your .env file or environment variables.")
+  end
+
+  # Fetches the OpenRouter API Key from environment variables.
+  # Raises MissingKeyError if not found.
+  def self.openrouter_api_key
+    ENV['OPENROUTER_API_KEY'] || raise(MissingKeyError, "OPENROUTER_API_KEY is not set in the environment. Please add it to your .env file or environment variables.")
+  end
+
+  # You can add other configuration methods here, for example:
+  # def self.database_url
+  #   ENV['DATABASE_URL'] || raise(MissingKeyError, "DATABASE_URL is not set.")
+  # end
+
+  # def self.default_items_per_page
+  #   ENV.fetch('DEFAULT_ITEMS_PER_PAGE', 25).to_i # Using fetch with a default for optional values
+  # end
+end
+```
+
+**How to Use the `Config` Module:**
+
+1. **Require the module** in your main application file (e.g., `app.rb`) or where needed:
+
+    ```ruby
+    # In app.rb or config/environment.rb
+    require_relative 'config/config' # Path relative to files in server/ (e.g., server/app.rb)
+    ```
+
+2. **Access configuration values** anywhere in your application:
+
+    ```ruby
+    # Example usage:
+    # api_key = Config.gemini_api_key
+    # if api_key
+    #   puts "Using Gemini API Key: #{api_key}"
+    # else
+    #   puts "Gemini API Key is not set."
+    # end
+    ```
+
+This `Config` module provides a single, clear point of entry for all environment-driven configurations. If you later decide to change how configuration is loaded (e.g., move to a more complex configuration library), you only need to update this module.
+
+## 5. Usage in a Service (Example)
+
+Here's how a service class, responsible for interacting with an external AI, might use the `Config` module to retrieve an API key.
+
+Let's say you have a service defined in `server/app/services/ai_service.rb` (example):
+
+```ruby
+# server/app/services/ai_service.rb (example)
+
+# Ensure the Config module (server/config/config.rb) is loaded.
+# This is often done in a central bootstrap file like server/app.rb or server/config/environment.rb
+
+module AIServices
+  class Gemini
+    def initialize
+      # Access the API key through the Config module
+      @api_key = Config.gemini_api_key
+
+      # It's good practice to check if the key exists when the service is initialized.
+      # We'll cover more robust error handling in the next section.
+      if @api_key.nil? || @api_key.empty?
+        raise ArgumentError, "Gemini API Key is not configured. Please set GEMINI_API_KEY environment variable."
+      end
+      puts "Gemini Service Initialized."
+    end
+
+    def get_completion(prompt)
+      # For demonstration, we'll just print the key (masked) and a message.
+      # In a real application, you would use a library like HTTParty or Faraday
+      # to make the actual API call.
+      masked_key = @api_key.gsub(/.(?=.{4})/, '*') # Mask most of the key for logging
+      puts "Gemini Service: Calling API with key #{masked_key} for prompt: '#{prompt}'"
+
+      # Simulate an API call
+      # response = HTTParty.post("https://api.gemini.example.com/v1/complete",
+      #   headers: {
+      #     "Authorization" => "Bearer #{@api_key}",
+      #     "Content-Type" => "application/json"
+      #   },
+      #   body: { prompt: prompt }.to_json
+      # )
+      # return response.parsed_response
+
+      "Simulated response for prompt: '#{prompt}'"
+    end
+  end
+
+  # You could have other services for OpenAI, OpenRouter, etc.
+  # class OpenAIService
+  #   def initialize
+  #     @api_key = Config.openai_api_key
+  #     # ...
+  #   end
+  #   # ...
+  # end
+end
+
+# How you might use this service in your application:
+#
+# require_relative 'config/config' # Or ensure it's loaded globally
+# require_relative 'app/services/ai_service' # Adjust path if used from server/app.rb
+#
+# begin
+#   gemini_client = AIServices::Gemini.new
+#   response = gemini_client.get_completion("Translate 'hello' to Spanish.")
+#   puts "Response from Gemini: #{response}"
+# rescue ArgumentError => e
+#   $stderr.puts "Error: #{e.message}"
+#   # Potentially exit or disable features that rely on this service
+# end
+```
+
+In this example:
+
+* The `AIServices::Gemini` class constructor fetches the `GEMINI_API_KEY` using `Config.gemini_api_key`.
+* It includes a basic check for the key's presence.
+* The `get_completion` method would then use this key to authenticate with the Gemini API.
+
+This pattern keeps your service classes clean and decoupled from the specifics of how configuration is loaded. They simply request what they need from the `Config` module.
+
+## 6. Error Handling for Missing Keys
+
+It's crucial for your application to behave predictably if required API keys are not found in the environment. Instead of letting the application proceed with a `nil` key (which would likely cause cryptic errors later), it's better to fail fast.
+
+**Strategy: Raise an Exception**
+
+Modify the `Config` module to raise a custom error if a key is missing. This makes the problem immediately obvious.
+
+Updated `server/config/config.rb`:
+
+```ruby
+# server/config/config.rb
+
+module Config
+  class MissingKeyError < StandardError; end
+
+  def self.gemini_api_key
+    ENV['GEMINI_API_KEY'] || raise(MissingKeyError, "GEMINI_API_KEY is not set in the environment. Please add it to your .env file or environment variables.")
+  end
+
+  def self.openai_api_key
+    ENV['OPENAI_API_KEY'] || raise(MissingKeyError, "OPENAI_API_KEY is not set in the environment. Please add it to your .env file or environment variables.")
+  end
+
+  def self.openrouter_api_key
+    ENV['OPENROUTER_API_KEY'] || raise(MissingKeyError, "OPENROUTER_API_KEY is not set in the environment. Please add it to your .env file or environment variables.")
+  end
+
+  # Example for an optional key with a default using .fetch
+  # def self.optional_setting
+  #   ENV.fetch('OPTIONAL_SETTING', 'default_value')
+  # end
+end
+```
+
+**Explanation:**
+
+* A custom error class `Config::MissingKeyError` is defined for clarity.
+* Each API key accessor now uses the `|| raise(...)` pattern. If `ENV['API_KEY']` is `nil` (meaning the key is not set), it will raise a `MissingKeyError` with a descriptive message.
+
+**Handling the Error:**
+
+When you call these configuration methods, you should be prepared to handle this error, especially at application startup or when a service is initialized.
+
+```ruby
+# Conceptual example in app.rb or an initializer
+
+# Ensure Config and services are loaded
+# require_relative 'config/config'
+# require_relative 'services/ai_service'
+
+begin
+  # Attempt to initialize services that depend on API keys
+  # This might implicitly call the Config methods
+  $gemini_service = AIServices::Gemini.new # Assuming Gemini service constructor calls Config.gemini_api_key
+  # $openai_service = AIServices::OpenAI.new
+  # ... other initializations
+  puts "Application configured successfully with necessary API keys."
+
+rescue Config::MissingKeyError => e
+  $stderr.puts "CRITICAL ERROR: #{e.message}"
+  $stderr.puts "The application cannot start without this configuration."
+  # Depending on the application, you might:
+  # - Log the error to a monitoring service.
+  # - Exit the application gracefully.
+  # - Disable features that rely on the missing key(s).
+  exit(1) # Exit if the key is absolutely critical for startup
+rescue => e # Catch other potential errors during startup
+  $stderr.puts "An unexpected error occurred during startup: #{e.message}"
+  exit(1)
+end
+
+# Application continues if all checks pass...
+```
+
+By raising an error, you prevent the application from running in an improperly configured state. The error message clearly indicates which key is missing, aiding in quick troubleshooting. For keys that are truly optional, you can use `ENV.fetch('KEY_NAME', 'default_value')` within the `Config` module to provide defaults instead of raising errors.
