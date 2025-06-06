@@ -72,11 +72,62 @@ export interface SiftChatParams {
   systemInstructionOverride?: string;
 }
 
+// Helper function to process individual SSE messages
+// Returns true if the stream should complete (on completion or error events)
+async function processSseMessage(
+  message: string,
+  onMessage: (content: string) => void,
+  onError: (error: any) => void,
+  onComplete: () => void
+): Promise<boolean> {
+  const lines = message.split('\n');
+  let eventType: string | null = null;
+  let eventData: string | null = null;
+  
+  for (const line of lines) {
+    if (line.startsWith('event: ')) {
+      eventType = line.slice(7).trim();
+    } else if (line.startsWith('data: ')) {
+      eventData = line.slice(6);
+    }
+  }
+  
+  if (eventType === 'complete') {
+    onComplete();
+    return true; // Signal that the stream should complete
+  } else if (eventType === 'error') {
+    if (eventData) {
+      try {
+        const errorData = JSON.parse(eventData);
+        onError(errorData);
+      } catch (e) {
+        onError({ type: 'ParseError', message: 'Failed to parse error data' });
+      }
+    } else {
+      onError({ type: 'UnknownError', message: 'Received error event without data' });
+    }
+    return true; // Signal that the stream should complete on error
+  } else if (eventData) {
+    // This is a data message (either with or without explicit event type)
+    try {
+      const data = JSON.parse(eventData);
+      if (data.delta) {
+        onMessage(data.delta);
+      }
+    } catch (e) {
+      console.warn('Failed to parse SSE data:', eventData);
+    }
+  }
+  
+  return false; // Continue processing more messages
+}
+
 export const continueSiftChat = async (
   params: SiftChatParams,
   onMessage: (content: string) => void,
   onError: (error: any) => void,
-  onComplete: () => void
+  onComplete: () => void,
+  signal?: AbortSignal
 ): Promise<void> => {
   try {
     const response = await fetch(`${API_BASE_URL}/sift/chat`, {
@@ -85,6 +136,7 @@ export const continueSiftChat = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(params),
+      signal,
     });
 
     if (!response.ok) {
@@ -98,51 +150,57 @@ export const continueSiftChat = async (
     }
 
     const decoder = new TextDecoder();
+    let buffer = '';
     
     try {
       while (true) {
+        // Check for abort signal
+        if (signal?.aborted) {
+          throw new Error('Request was aborted');
+        }
+        
         const { done, value } = await reader.read();
         
         if (done) {
           break;
         }
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
+        // Decode the chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Process complete SSE messages (messages end with \n\n)
+        let messageEndIndex;
+        while ((messageEndIndex = buffer.indexOf('\n\n')) !== -1) {
+          const message = buffer.slice(0, messageEndIndex);
+          buffer = buffer.slice(messageEndIndex + 2);
+          
+          if (message.trim()) {
             try {
-              const jsonStr = line.slice(6);
-              if (jsonStr.trim()) {
-                const data = JSON.parse(jsonStr);
-                if (data.delta) {
-                  onMessage(data.delta);
-                }
+              const shouldComplete = await processSseMessage(message, onMessage, onError, onComplete);
+              if (shouldComplete) {
+                return; // Exit the function immediately on completion or error
               }
             } catch (e) {
-              console.warn('Failed to parse SSE data:', line);
-            }
-          } else if (line.startsWith('event: ')) {
-            const eventType = line.slice(7).trim();
-            if (eventType === 'complete') {
-              onComplete();
-              break;
-            } else if (eventType === 'error') {
-              const nextLine = lines[lines.indexOf(line) + 1];
-              if (nextLine && nextLine.startsWith('data: ')) {
-                try {
-                  const errorData = JSON.parse(nextLine.slice(6));
-                  onError(errorData);
-                } catch (e) {
-                  onError({ type: 'ParseError', message: 'Failed to parse error data' });
-                }
-              }
-              break;
+              console.warn('Failed to process SSE message:', e);
             }
           }
         }
       }
+      
+      // Process any remaining buffer content
+      if (buffer.trim()) {
+        try {
+          const shouldComplete = await processSseMessage(buffer.trim(), onMessage, onError, onComplete);
+          if (shouldComplete) {
+            return; // Exit if completion or error was handled
+          }
+        } catch (e) {
+          console.warn('Failed to process final SSE message:', e);
+        }
+      }
+      
+      // If we reach here without a completion event, call onComplete
+      onComplete();
     } finally {
       reader.releaseLock();
     }
@@ -171,7 +229,8 @@ export const sendChatMessage = async (
   onError: (error: any) => void,
   onComplete: () => void,
   preprocessingOutputText?: string,
-  systemInstructionOverride?: string
+  systemInstructionOverride?: string,
+  signal?: AbortSignal
 ): Promise<void> => {
   const params: SiftChatParams = {
     newUserMessageText: messageText,
@@ -182,7 +241,7 @@ export const sendChatMessage = async (
     systemInstructionOverride,
   };
 
-  return continueSiftChat(params, onMessage, onError, onComplete);
+  return continueSiftChat(params, onMessage, onError, onComplete, signal);
 };
 
 export const fetchModelConfigurations = async (): Promise<AIModelConfig[]> => {

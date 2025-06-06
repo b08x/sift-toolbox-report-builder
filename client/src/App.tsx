@@ -396,7 +396,11 @@ const App: React.FC = () => {
             m.id === aiMessageId ? { ...m, isLoading: false } : m
           ));
           setIsLoading(false);
-        }
+        },
+        // Optional parameters
+        undefined, // preprocessingOutputText
+        undefined, // systemInstructionOverride
+        signal      // abort signal
       );
 
 
