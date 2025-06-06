@@ -3,12 +3,12 @@ require 'sequel'
 require 'logger'
 
 # Define database connection parameters
-# Uses environment variables, falling back to defaults for development
+# Uses environment variables, falling back to defaults matching docker-compose.yml
 db_host = ENV.fetch('DB_HOST', 'localhost')
 db_port = ENV.fetch('DB_PORT', '5432')
-db_name = ENV.fetch('DB_NAME', 'app_db')
-db_user = ENV.fetch('DB_USER', 'app_user')
-db_password = ENV.fetch('DB_PASSWORD', 'app_password')
+db_name = ENV.fetch('DB_NAME', 'sift')
+db_user = ENV.fetch('DB_USER', 'postgres')
+db_password = ENV.fetch('DB_PASSWORD', '')
 
 # Construct the database URL
 DATABASE_URL = ENV.fetch('DATABASE_URL', "postgres://#{db_user}:#{db_password}@#{db_host}:#{db_port}/#{db_name}")

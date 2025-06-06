@@ -1,4 +1,5 @@
 # config/initializers/ruby_llm.rb
+require 'ruby_llm'
 require_relative '../config'
 
 RubyLLM.configure do |config|
