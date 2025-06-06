@@ -161,6 +161,30 @@ export const continueSiftChat = async (
   }
 };
 
+// Simplified wrapper for sending chat messages
+export const sendChatMessage = async (
+  messageText: string,
+  chatHistory: ChatMessage[],
+  selectedModelId: string,
+  modelConfigParams: Record<string, any>,
+  onMessage: (content: string) => void,
+  onError: (error: any) => void,
+  onComplete: () => void,
+  preprocessingOutputText?: string,
+  systemInstructionOverride?: string
+): Promise<void> => {
+  const params: SiftChatParams = {
+    newUserMessageText: messageText,
+    chatHistory,
+    selectedModelId,
+    modelConfigParams,
+    preprocessingOutputText,
+    systemInstructionOverride,
+  };
+
+  return continueSiftChat(params, onMessage, onError, onComplete);
+};
+
 export const fetchModelConfigurations = async (): Promise<AIModelConfig[]> => {
   try {
     const response = await fetch(`${API_BASE_URL}/models/config`, {

@@ -19,7 +19,7 @@ import {
   CurrentSiftQueryDetails
 } from './types';
 // Prompts are now handled by the backend
-import { initiateSiftAnalysis, fetchModelConfigurations } from './services/apiClient';
+import { initiateSiftAnalysis, fetchModelConfigurations, sendChatMessage } from './services/apiClient';
 
 // Helper function to update the last AI message that is currently loading
 const updateLastLoadingAiMessage = (
@@ -361,29 +361,43 @@ const App: React.FC = () => {
     const signal = abortControllerRef.current.signal;
 
     try {
-      // const currentModelConfig = getSelectedModelConfig();
-      // if (!currentModelConfig) throw new Error("Model config not found for follow-up.");
+      // Convert current chat messages to the format expected by the API
+      const chatHistory = chatMessages.map((msg) => ({
+        role: msg.sender === 'user' ? 'user' as const : 'assistant' as const,
+        content: msg.text,
+      }));
 
-      // All direct SDK calls below are removed.
-      // Follow-up messages will now be sent to the backend.
-      // A new function in apiClient.ts (e.g., sendFollowUpMessage) will handle this.
-      // This function would likely take the currentStreamUrl (or a chat ID) and the messageText.
-      // The backend would then use its existing SDK clients and chat history management.
-
-      console.log("Attempting to send follow-up message via backend (placeholder):", messageText);
-      // Example placeholder for new API call:
-      // if (!currentStreamUrl) {
-      //   throw new Error("Cannot send follow-up: No active stream URL.");
-      // }
-      // await sendFollowUpMessageToBackend({ streamUrl: currentStreamUrl, message: messageText, signal });
-      // The SSE handler (useEffect for currentStreamUrl) should automatically pick up new messages
-      // sent by the backend on the existing stream, or the backend might need to push to a specific client.
-      // For now, we'll simulate a quick error response locally as the backend part isn't implemented.
-      
-      // Simulate an error because the backend endpoint for follow-up is not yet implemented
-      const simulatedErrorText = "Follow-up message functionality via backend is not yet implemented.";
-      setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: simulatedErrorText, isLoading: false, isError: true } : m));
-      setError(simulatedErrorText);
+      // Send the chat message to the backend
+      await sendChatMessage(
+        messageText,
+        chatHistory,
+        selectedModelId,
+        modelConfigParams,
+        // onMessage callback - update the AI message with new content
+        (content: string) => {
+          setChatMessages(prev => 
+            updateLastLoadingAiMessage(prev, { 
+              text: (prev.find(m => m.id === aiMessageId)?.text || '') + content 
+            })
+          );
+        },
+        // onError callback
+        (error: any) => {
+          console.error("Chat API error:", error);
+          const errorText = error.message || String(error);
+          setChatMessages(prev => prev.map(m => 
+            m.id === aiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m
+          ));
+          setError(errorText);
+        },
+        // onComplete callback
+        () => {
+          setChatMessages(prev => prev.map(m => 
+            m.id === aiMessageId ? { ...m, isLoading: false } : m
+          ));
+          setIsLoading(false);
+        }
+      );
 
 
       // Old SDK-specific logic commented out:
