@@ -25,3 +25,4 @@ dist-ssr
 sift-toolbox.json
 *.env
 sift_backend/log/*.log
+/data/

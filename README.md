@@ -5,12 +5,13 @@ SIFT-Toolbox is a full-stack application designed to assist users in fact-checki
 ## Features
 
 * **AI-Powered SIFT Analysis:** Leverages various AI models to guide users through the SIFT process.
+* **Interactive SIFT Chat:** Supports continuous conversations with AI about fact-checking results through the `/api/sift/chat` endpoint.
 * **Dynamic Model Configuration:** Fetches available AI models and their configurations dynamically from the backend.
 * **Image Upload and Analysis:** Supports image uploads for analysis, including validation for file type and size.
 * **Structured AI Prompts:** Utilizes detailed YAML-based prompt configurations with ERB templating for tailored AI responses.
 * **Prompt Management System:** Provides a unified interface for managing YAML-based prompts with ERB templating, integrated with AgentManager.
 * **Client-Server Architecture:** React/TypeScript frontend with a Ruby/Sinatra backend.
-* **Real-time AI Responses:** Uses Server-Sent Events (SSE) for streaming AI outputs.
+* **Real-time AI Responses:** Uses Server-Sent Events (SSE) with enhanced streaming capabilities for immediate, robust delivery of AI outputs.
 * **Database Integration:** PostgreSQL with pgvector for data persistence, including storage of SIFT reports and conversation history.
 * **Docker Support:** Includes [`docker-compose.yml`](docker-compose.yml:1) for easy setup and deployment.
 
@@ -180,6 +181,39 @@ This enables:
 * Saving complete SIFT reports
 * Storing conversation history between users and the AI
 * Tracking analyzed URLs and their metadata
+
+### Interactive Chat System
+
+The application features a robust interactive chat system that allows users to have continuous conversations about SIFT analyses:
+
+* **Chat API Endpoint:** The `/api/sift/chat` endpoint enables follow-up questions and extended discussions about fact-checking results.
+* **Optimized SSE Streaming:** Enhanced Server-Sent Events (SSE) implementation with:
+  * Proper message boundary detection for reliable message delivery
+  * Immediate buffer flushing for real-time responses
+  * Robust error handling and recovery
+  * Consistent event formatting for frontend compatibility
+* **Simplified Client Interface:** The frontend includes a `sendChatMessage` wrapper function for streamlined chat interactions.
+
+Example client usage:
+
+```typescript
+// Send a chat message with streaming response
+await sendChatMessage(
+  messageText,        // The user's message
+  chatHistory,        // Previous conversation history
+  selectedModelId,    // AI model to use
+  modelConfigParams,  // Configuration for the model
+  (content) => {      // Real-time content handler
+    // Update UI with streamed content
+  },
+  (error) => {        // Error handler
+    // Handle any errors
+  },
+  () => {             // Completion handler
+    // Handle completion of the response
+  }
+);
+```
 
 ***
 
