@@ -5,6 +5,8 @@ require 'sinatra/cross_origin'
 require 'dotenv/load' # Loads environment variables from .env
 require 'securerandom' # For generating unique IDs
 require_relative 'config/database' # Load database configuration
+require_relative 'config/config' # Load API key configuration
+require_relative 'config/initializers/ruby_llm' # Load AI service configuration
 require_relative 'services/sift_service'
 require_relative 'services/ai_service' # For AIService.continue_sift_chat
 require_relative 'lib/image_handler'
