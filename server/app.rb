@@ -133,6 +133,27 @@ end
 #   # Example: set :public_folder, File.expand_path('../public', __FILE__)
 # end
 
+# Helper method for SSE streaming
+helpers do
+  def send_sse_event(out, event_type, data)
+    return if out.closed?
+    
+    sse_message = case event_type
+                  when :data
+                    "data: #{data.to_json}\n\n"
+                  when :event
+                    "event: #{data[:event]}\ndata: #{data[:data].to_json}\n\n"
+                  else
+                    "#{event_type}: #{data}\n\n"
+                  end
+    
+    out << sse_message
+    out.flush if out.respond_to?(:flush) # Ensure immediate transmission
+  rescue StandardError => e
+    settings.logger.error "Error sending SSE event: #{e.message}"
+  end
+end
+
 # Basic health check route
 get '/api/health' do
   settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
@@ -359,6 +380,9 @@ post '/api/sift/initiate' do
   end
 
   content_type 'text/event-stream'
+  headers 'Cache-Control' => 'no-cache',
+          'Connection' => 'keep-alive',
+          'X-Accel-Buffering' => 'no' # Disable nginx buffering for immediate streaming
   stream(:keep_open) do |out|
     settings.logger.info "SSE stream opened for /api/sift/initiate. Client: #{request.ip}"
     begin
@@ -386,12 +410,11 @@ post '/api/sift/initiate' do
               # This is an error event already formatted by AIService
               settings.logger.debug("Streaming pre-formatted event from AIService: #{content_or_event.strip}")
               out << content_or_event
+              out.flush if out.respond_to?(:flush)
             elsif content_or_event.is_a?(String) && !content_or_event.strip.empty?
               # This is raw content from AIService, needs formatting
-              sse_payload = { delta: content_or_event }.to_json
-              sse_message = "data: #{sse_payload}\n\n"
-              settings.logger.debug("Streaming formatted data to client: #{sse_message.strip}")
-              out << sse_message
+              send_sse_event(out, :data, { delta: content_or_event })
+              settings.logger.debug("Streaming data chunk to client: #{content_or_event.length} chars")
             else
               # Potentially empty string or unexpected content, log it but don't send
               settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
@@ -422,12 +445,11 @@ post '/api/sift/initiate' do
             # This is an error event already formatted by AIService
             settings.logger.debug("Streaming pre-formatted event from AIService: #{content_or_event.strip}")
             out << content_or_event
+            out.flush if out.respond_to?(:flush)
           elsif content_or_event.is_a?(String) && !content_or_event.strip.empty?
             # This is raw content from AIService, needs formatting
-            sse_payload = { delta: content_or_event }.to_json
-            sse_message = "data: #{sse_payload}\n\n"
-            settings.logger.debug("Streaming formatted data to client: #{sse_message.strip}")
-            out << sse_message
+            send_sse_event(out, :data, { delta: content_or_event })
+            settings.logger.debug("Streaming data chunk to client: #{content_or_event.length} chars")
           else
             # Potentially empty string or unexpected content, log it but don't send
             settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
@@ -438,22 +460,22 @@ post '/api/sift/initiate' do
 
       if called_service && !out.closed?
         settings.logger.info("AIService.generate_sift_stream completed. Sending 'complete' event.")
-        out << "event: complete\ndata: #{{ message: 'Stream finished' }.to_json}\n\n"
+        send_sse_event(out, :event, { event: 'complete', data: { message: 'Stream finished' } })
       end
     rescue MyCustomError => e
       settings.logger.error("MyCustomError in /api/sift/initiate: #{e.message}")
-      out << "event: error\ndata: #{{ type: e.class.name, message: e.message }.to_json}\n\n" unless out.closed?
+      unless out.closed?
+        send_sse_event(out, :event, { event: 'error', data: { type: e.class.name, message: e.message } })
+      end
     rescue RubyLLM::Error => e
       settings.logger.error("RubyLLM::Error in /api/sift/initiate: #{e.message} - Details: #{e.try(:response)&.body}")
       unless out.closed?
-        out << "event: error\ndata: #{{ type: e.class.name, message: e.message,
-                                        details: e.try(:response)&.body }.to_json}\n\n"
+        send_sse_event(out, :event, { event: 'error', data: { type: e.class.name, message: e.message, details: e.try(:response)&.body } })
       end
     rescue StandardError => e
       settings.logger.error("Error in /api/sift/initiate: #{e.message}\n#{e.backtrace.join("\n")}")
       unless out.closed?
-        out << "event: error\ndata: #{{ type: 'StreamingError',
-                                        message: "An error occurred while processing your request: #{e.message}" }.to_json}\n\n"
+        send_sse_event(out, :event, { event: 'error', data: { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" } })
       end
     ensure
       settings.logger.info("Closing stream for /api/sift/initiate for client: #{request.ip}")
@@ -521,6 +543,9 @@ post '/api/sift/chat' do
   end
 
   content_type 'text/event-stream'
+  headers 'Cache-Control' => 'no-cache',
+          'Connection' => 'keep-alive',
+          'X-Accel-Buffering' => 'no' # Disable nginx buffering for immediate streaming
   stream(:keep_open) do |out|
     settings.logger.info "SSE stream opened for /api/sift/chat. Client: #{request.ip}"
     begin
@@ -530,8 +555,9 @@ post '/api/sift/chat' do
         settings.logger.error "AIService is not defined. Ensure it's loaded."
         # This is a server configuration error, so we might not be able to send an SSE error gracefully.
         # However, we try.
-        error_data = { type: 'ServerError', message: 'AIService is not available. Configuration issue.' }.to_json
-        out << "event: error\ndata: #{error_data}\n\n" unless out.closed?
+        unless out.closed?
+          send_sse_event(out, :event, { event: 'error', data: { type: 'ServerError', message: 'AIService is not available. Configuration issue.' } })
+        end
         next # or break, as the stream cannot proceed
       end
 
@@ -553,12 +579,11 @@ post '/api/sift/chat' do
           # This is an error event already formatted by AIService
           settings.logger.debug("Streaming pre-formatted event from AIService for /api/sift/chat: #{content_or_event.strip}")
           out << content_or_event
+          out.flush if out.respond_to?(:flush)
         elsif content_or_event.is_a?(String) && !content_or_event.strip.empty?
           # This is raw content from AIService, needs formatting
-          sse_payload = { delta: content_or_event }.to_json
-          sse_message = "data: #{sse_payload}\n\n"
-          settings.logger.debug("Streaming formatted data to client for /api/sift/chat: #{sse_message.strip}")
-          out << sse_message
+          send_sse_event(out, :data, { delta: content_or_event })
+          settings.logger.debug("Streaming data chunk to client for /api/sift/chat: #{content_or_event.length} chars")
         else
           # Potentially empty string or unexpected content, log it but don't send
           settings.logger.debug("Received empty or unexpected content from AIService for /api/sift/chat: '#{content_or_event}' - not sending.")
@@ -568,18 +593,14 @@ post '/api/sift/chat' do
 
       # Send a completion event to signal the end of the stream
       unless out.closed?
-        out << "event: complete
-data: #{{ message: 'Chat stream finished' }.to_json}
-
-"
-        settings.logger.info "Sent 'complete' event to client: #{request.ip}"
+        settings.logger.info("AIService.continue_sift_chat completed. Sending 'complete' event.")
+        send_sse_event(out, :event, { event: 'complete', data: { message: 'Chat stream finished' } })
       end
     rescue StandardError => e
       settings.logger.error "Error during SSE streaming or AIService.continue_sift_chat execution: #{e.class.name} - #{e.message}"
       settings.logger.error e.backtrace.join("\n")
       unless out.closed?
-        error_data = { type: 'StreamingError', message: "An error occurred: #{e.message}" }.to_json
-        out << "event: error\ndata: #{error_data}\n\n"
+        send_sse_event(out, :event, { event: 'error', data: { type: 'StreamingError', message: "An error occurred: #{e.message}" } })
       end
     ensure
       settings.logger.info "SSE stream ensure block reached for /api/sift/chat. Closing stream for client: #{request.ip}"
