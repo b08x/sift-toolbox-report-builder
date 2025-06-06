@@ -3,6 +3,7 @@
 require 'json'
 require 'ruby_llm' # Assuming ruby_llm is loaded via Bundler or accessible
 require_relative 'prompt_manager'
+require_relative 'persistence_service'
 require_relative '../lib/image_handler' # Adjust path if necessary
 
 module AIService
@@ -16,8 +17,9 @@ module AIService
     # @param selected_model_id [String] The ID of the model to use (e.g., "gemini-1.5-pro-latest").
     # @param model_config_params [Hash] Configuration for the model (e.g., { temperature: 0.7 }).
     # @param chat_history [Array<Hash>] Array of previous messages [{role: :user, content: "..."}, ...].
+    # @param persist_analysis [Boolean] Whether to save the analysis to database (default: true for initial requests)
     # @param block [Proc] Block to yield SSE formatted chunks to.
-    # @return [RubyLLM::Message, nil] The final AI message object for persistence, or nil if setup fails.
+    # @return [Hash] Hash containing final_message and optionally persistence_result, or nil if setup fails.
     def generate_sift_stream(
       chat_session_id: nil,
       user_input_text: nil,
@@ -26,6 +28,7 @@ module AIService
       selected_model_id:,
       model_config_params: {},
       chat_history: [],
+      persist_analysis: true,
       &block
     )
       unless block_given?
@@ -102,10 +105,14 @@ data: #{ {error: "Prompt generation failed", type: "PromptError"}.to_json }
         puts "AIService: With image: #{image_path || 'No'}"
 
         # 6. Make the streaming call
+        # Collect streamed content for persistence
+        collected_content = ""
+        
         final_message = chat.ask(current_user_prompt_text, with: image_path) do |chunk|
           if chunk&.content&.is_a?(String) && !chunk.content.strip.empty?
             # Yield raw content instead of formatted SSE
             block.call(chunk.content)
+            collected_content += chunk.content
           elsif chunk&.tool_calls # Handle potential tool calls if the model supports/returns them
             # puts "AIService: Received tool calls: #{chunk.tool_calls}"
             # Handle tool calls if necessary, possibly yielding a specific format or ignoring
@@ -113,7 +120,35 @@ data: #{ {error: "Prompt generation failed", type: "PromptError"}.to_json }
         end
 
         puts "AIService: Streaming complete. Final message role: #{final_message&.role}"
-        return final_message # Return the complete message object for persistence
+        
+        # Handle persistence for initial SIFT analysis
+        persistence_result = nil
+        if persist_analysis && final_message && PersistenceService.database_available?
+          begin
+            # Only persist for initial requests (no chat history)
+            if chat_history.empty? && user_input_text && !user_input_text.strip.empty?
+              image_filename = image_file_details ? File.basename(image_file_details[:file_path]) : nil
+              
+              persistence_result = PersistenceService.save_initial_sift_analysis(
+                user_query_text: user_input_text,
+                report_type: report_type,
+                model_id_used: selected_model_id,
+                generated_report_text: collected_content,
+                user_image_filename: image_filename
+              )
+              
+              puts "AIService: Persisted initial SIFT analysis: #{persistence_result[:analysis_id]}"
+            end
+          rescue PersistenceService::PersistenceError => e
+            puts "AIService: Failed to persist analysis: #{e.message}"
+            # Continue execution - persistence failure shouldn't break the response
+          end
+        end
+        
+        return { 
+          final_message: final_message, 
+          persistence_result: persistence_result 
+        }
 
       rescue RubyLLM::Error => e
         error_message = "AIService: RubyLLM Error - #{e.message}"
@@ -145,14 +180,18 @@ data: #{error_json}
     # @param selected_model_id [String] The ID of the model to use.
     # @param model_config_params [Hash] Configuration for the model (e.g., { temperature: 0.7 }).
     # @param system_instruction_override [String, nil] Optional override for system instructions.
+    # @param analysis_id [String, nil] Optional SIFT analysis ID for persistence
+    # @param persist_conversation [Boolean] Whether to save the conversation to database (default: true)
     # @param block [Proc] Block to yield SSE formatted chunks to.
-    # @return [RubyLLM::Message, nil] The final AI message object for persistence, or nil if an error occurs.
+    # @return [Hash] Hash containing final_message and optionally persistence_result, or nil if an error occurs.
     def continue_sift_chat(
       new_user_message_text:,
       chat_history:,
       selected_model_id:,
       model_config_params: {},
       system_instruction_override: nil,
+      analysis_id: nil,
+      persist_conversation: true,
       &block
     )
       unless block_given?
@@ -207,10 +246,14 @@ data: #{error_json}
 
         puts "AIService: Asking LLM with new user message: \"#{new_user_message_text.lines.first.strip}...\""
 
+        # Collect streamed content for persistence
+        collected_content = ""
+        
         final_message = chat.ask(new_user_message_text) do |chunk|
           if chunk&.content&.is_a?(String) && !chunk.content.strip.empty?
             # Yield raw content instead of formatted SSE
             block.call(chunk.content)
+            collected_content += chunk.content
           elsif chunk&.tool_calls
             # TODO: Consider logging or handling chunk.tool_calls if applicable for chat continuations
             # puts "AIService: Received tool calls in continue_sift_chat: #{chunk.tool_calls}"
@@ -218,7 +261,29 @@ data: #{error_json}
         end
 
         puts "AIService: Streaming complete (continue_sift_chat). Final message role: #{final_message&.role}"
-        return final_message
+        
+        # Handle persistence for follow-up conversation
+        persistence_result = nil
+        if persist_conversation && analysis_id && final_message && PersistenceService.database_available?
+          begin
+            persistence_result = PersistenceService.save_followup_conversation(
+              analysis_id: analysis_id,
+              user_message_text: new_user_message_text,
+              ai_response_text: collected_content,
+              model_id_used: selected_model_id
+            )
+            
+            puts "AIService: Persisted follow-up conversation for analysis: #{analysis_id}"
+          rescue PersistenceService::PersistenceError => e
+            puts "AIService: Failed to persist follow-up conversation: #{e.message}"
+            # Continue execution - persistence failure shouldn't break the response
+          end
+        end
+        
+        return { 
+          final_message: final_message, 
+          persistence_result: persistence_result 
+        }
 
       rescue RubyLLM::Error => e
         error_message = "AIService: RubyLLM Error (continue_sift_chat) - #{e.message}"

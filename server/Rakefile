@@ -9,7 +9,7 @@ Sequel.extension :migration
 namespace :db do
   desc "Run database migrations"
   task :migrate, [:version] do |t, args|
-    migrations_dir = File.join(__dir__, 'db', 'migrations')
+    migrations_dir = File.join(__dir__, 'db', 'migrate')
     target_version = args[:version] ? args[:version].to_i : nil
 
     if !Dir.exist?(migrations_dir)
@@ -33,7 +33,7 @@ namespace :db do
 
   desc "Rollback database migrations"
   task :rollback, [:steps] do |t, args|
-    migrations_dir = File.join(__dir__, 'db', 'migrations')
+    migrations_dir = File.join(__dir__, 'db', 'migrate')
     steps = args[:steps] ? args[:steps].to_i : 1 # Default to 1 step back
 
     if !Dir.exist?(migrations_dir)
@@ -57,7 +57,7 @@ namespace :db do
 
   desc "Check migration status"
   task :status do
-    migrations_dir = File.join(__dir__, 'db', 'migrations')
+    migrations_dir = File.join(__dir__, 'db', 'migrate')
 
     if !Dir.exist?(migrations_dir)
       puts "Migrations directory not found: #{migrations_dir}"

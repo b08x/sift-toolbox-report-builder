@@ -26,18 +26,18 @@ services:
     profiles:
       - dev
 
-  postgres_db:
-    image: postgres:15
+  pgvector:
+    image: ankane/pgvector
+    container_name: pgvector
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+      POSTGRES_DB: sift
+      POSTGRES_USER: postgres
     ports:
       - "5432:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
-      - ./sift_backend/db/init:/docker-entrypoint-initdb.d
-    environment:
-      - POSTGRES_USER=app_user
-      - POSTGRES_PASSWORD=app_password
-      - POSTGRES_DB=app_db
-    restart: unless-stopped
-
-volumes:
-  pg_data:
+      - ./data/pg/local-data:/data
+      - ./data/pg/pgdata:/var/lib/postgresql/data
