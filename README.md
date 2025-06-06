@@ -1,16 +1,161 @@
-# Securely Managing API Keys in a Sinatra Application
+# SIFT-Toolbox
 
-This document provides guidance on how to securely manage API keys for external services like Google Gemini, OpenAI, and OpenRouter in a Ruby Sinatra application.
+SIFT-Toolbox is a full-stack application designed to assist users in fact-checking and contextualizing information using the SIFT (Stop, Investigate the source, Find better coverage, Trace claims) methodology, enhanced with AI capabilities.
+
+## Features
+
+* **AI-Powered SIFT Analysis:** Leverages various AI models to guide users through the SIFT process.
+* **Dynamic Model Configuration:** Fetches available AI models and their configurations dynamically from the backend.
+* **Image Upload and Analysis:** Supports image uploads for analysis, including validation for file type and size.
+* **Structured AI Prompts:** Utilizes detailed YAML-based prompt configurations for tailored AI responses.
+* **Client-Server Architecture:** React/TypeScript frontend with a Ruby/Sinatra backend.
+* **Real-time AI Responses:** Uses Server-Sent Events (SSE) for streaming AI outputs.
+* **Database Integration:** PostgreSQL backend for data persistence.
+* **Docker Support:** Includes [`docker-compose.yml`](docker-compose.yml:1) for easy setup and deployment.
+
+## Architecture
+
+* **Frontend (`client/`):** Built with React, TypeScript, and Vite. Handles user interaction and displays AI-generated SIFT analysis.
+* **Backend (`server/`):** A Ruby Sinatra application. Manages AI model interactions, SIFT logic, API key handling, and database operations.
+
+## Project Structure
+
+The project is organized into two main directories:
+
+* `client/`: Contains all frontend code (React, TypeScript).
+* `server/`: Contains all backend code (Ruby, Sinatra).
+* [`docker-compose.yml`](docker-compose.yml:1): For running the application using Docker.
+* [`.env.example`](.env.example:1): Template for environment variables required by the backend (located at project root).
+
+## Getting Started
+
+### Prerequisites
+
+* Node.js and npm (for the frontend)
+* Ruby and Bundler (for the backend)
+* Docker and Docker Compose (optional, for running with Docker)
+
+### Backend Setup (`server/`)
+
+1. **Navigate to the server directory:**
+
+    ```bash
+    cd server
+    ```
+
+2. **Install dependencies:**
+
+    ```bash
+    bundle install
+    ```
+
+3. **Environment Variables:**
+    Copy the [`.env.example`](.env.example:1) file from the project root to `server/.env` and fill in your API keys and other necessary configurations.
+
+    ```bash
+    # When inside the server/ directory:
+    cp ../.env.example .env
+    ```
+
+    The `dotenv` gem, used by the backend, will load `server/.env` in development.
+    The following "API Key Management" section details this further.
+4. **Database Setup:**
+    Ensure PostgreSQL is running and configured as per your `server/.env` file. Then, run migrations:
+
+    ```bash
+    bundle exec rake db:migrate
+    ```
+
+5. **Running the Backend Server:**
+
+    ```bash
+    bundle exec ruby app.rb
+    ```
+
+    The server will typically start on `http://localhost:4567`.
+
+### Frontend Setup (`client/`)
+
+1. **Navigate to the client directory:**
+
+    ```bash
+    cd client
+    ```
+
+2. **Install dependencies:**
+
+    ```bash
+    npm install
+    ```
+
+3. **Running the Frontend Development Server:**
+
+    ```bash
+    npm run dev
+    ```
+
+    The frontend will typically be available at `http://localhost:5173` and will proxy API requests to the backend.
+
+### Using Docker Compose (Alternative)
+
+1. Ensure Docker and Docker Compose are installed.
+2. **Environment Variables for Docker Compose:**
+    Copy the root [`.env.example`](.env.example:1) to a root `.env` file and populate it with your API keys.
+
+    ```bash
+    # Run from the project root directory
+    cp .env.example .env
+    ```
+
+    The [`docker-compose.yml`](docker-compose.yml:1) is configured to use this root `.env` file to provide environment variables to the services.
+3. Start the application:
+
+    ```bash
+    docker-compose up --build
+    ```
+
+    This will build the images and start the frontend and backend services.
+
+## Development
+
+Common development commands (refer to [`CLAUDE.md`](CLAUDE.md:1) for more details):
+
+### Frontend (`client/`)
+
+```bash
+cd client
+npm run dev       # Development server
+npm run build     # Production build
+npm run preview   # Preview production build
+npx tsc --noEmit  # TypeScript checking
+```
+
+### Backend (`server/`)
+
+```bash
+cd server
+bundle install            # Install dependencies
+bundle exec rake db:migrate # Database migrations
+bundle exec ruby app.rb   # Run server (development)
+bundle exec rubocop       # Linting
+bundle exec rubocop -a    # Auto-fix linting issues
+```
+
+***
+
+## API Key Management for the Sinatra Backend
+
+This section provides guidance on how to securely manage API keys for external services like Google Gemini, OpenAI, and OpenRouter within the Ruby Sinatra backend (`server/`) of the SIFT-Toolbox application.
 
 ## 1. Why API Keys Should Never Be Hardcoded
 
 Hardcoding API keys directly into your source code is a significant security risk. Here's why:
 
-*   **Exposure in Version Control:** If your code is hosted on a platform like GitHub or GitLab, hardcoded keys become part of your repository's history. Even if you remove them later, they can still be found in previous commits.
-*   **Accidental Leaks:** Keys can be accidentally leaked through shared code snippets, error messages, or logs if they are present directly in the codebase.
-*   **Difficult to Rotate:** If a key is compromised, changing it becomes a cumbersome process. You'd need to modify the code, re-deploy the application, and ensure all previous versions with the old key are no longer accessible.
-*   **Unauthorized Access:** Anyone who gains access to your source code (e.g., a disgruntled employee, a compromised developer account, or a public repository) will also gain access to your API keys. This can lead to unauthorized use of paid services, resulting in financial loss or data breaches.
-*   **Environment-Specific Keys:** Often, you'll use different API keys for development, staging, and production environments. Hardcoding makes managing these different keys impractical and error-prone.
+* **Exposure in Version Control:** If your code is hosted on a platform like GitHub or GitLab, hardcoded keys become part of your repository's history. Even if you remove them later, they can still be found in previous commits.
+* **Accidental Leaks:** Keys can be accidentally leaked through shared code snippets, error messages, or logs if they are present directly in the codebase.
+* **Difficult to Rotate:** If a key is compromised, changing it becomes a cumbersome process. You'd need to modify the code, re-deploy the application, and ensure all previous versions with the old key are no longer accessible.
+* **Unauthorized Access:** Anyone who gains access to your source code (e.g., a disgruntled employee, a compromised developer account, or a public repository) will also gain access to your API keys. This can lead to unauthorized use of paid services, resulting in financial loss or data breaches.
+* **Environment-Specific Keys:** Often, you'll use different API keys for development, staging, and production environments. Hardcoding makes managing these different keys impractical and error-prone.
 
 Storing keys outside the codebase, typically in environment variables, is the recommended best practice.
 
@@ -36,8 +181,8 @@ end
 
 **To make these variables available to your application:**
 
-*   **In Production/Staging (e.g., Heroku, AWS, Docker):** You'll typically set these environment variables through your hosting platform's dashboard, configuration files (e.g., Docker Compose), or command-line interface.
-*   **In Local Development:** You can set them in your shell before running the application (e.g., `export GEMINI_API_KEY="your_key_here"`), or use a tool like `dotenv` to load them from a file, which we'll cover next.
+* **In Production/Staging (e.g., Heroku, AWS, Docker):** You'll typically set these environment variables through your hosting platform's dashboard, configuration files (e.g., Docker Compose), or command-line interface.
+* **In Local Development:** You can set them in your shell before running the application (e.g., `export GEMINI_API_KEY="your_key_here"`), or use a tool like `dotenv` to load them from a file, which we'll cover next.
 
 ## 3. Using the `dotenv` Gem for Local Development
 
@@ -45,30 +190,38 @@ The `dotenv` gem is very useful for managing environment variables in your local
 
 **Steps to use `dotenv`:**
 
-1.  **Add `dotenv` to your `Gemfile`:**
-    If you haven't already, add it to your `Gemfile`:
+1. **Add `dotenv` to your `server/Gemfile`:**
+    If you haven't already, add it to your `server/Gemfile`:
+
     ```ruby
     gem 'dotenv'
     ```
-    And then run `bundle install` in your terminal.
 
-2.  **Create a `.env` file:**
-    Create a file named `.env` in the root of your project. **This file should never be committed to version control.** Add it to your `.gitignore` file.
-    You can copy the provided `.env.example` to `.env` and replace the placeholder values with your actual keys:
+    And then run `bundle install` in your `server/` directory.
+
+2. **Create a `server/.env` file:**
+    Create a file named `.env` in your `server/` directory (i.e., `server/.env`). **This file should never be committed to version control.** Ensure `server/.env` is listed in your root `.gitignore` file.
+    You can copy the root [`.env.example`](.env.example:1) to `server/.env` and replace placeholder values:
+
     ```bash
-    cp .env.example .env
+    # Run from the project root directory:
+    cp .env.example server/.env
+    # Or, if you are already in the server/ directory:
+    # cp ../.env.example .env
     ```
-    Your `.env` file would look something like this:
+
+    Your `server/.env` file would look something like this:
+
     ```
     GEMINI_API_KEY="actual_gemini_key_value"
     OPENAI_API_KEY="actual_openai_key_value"
     OPENROUTER_API_KEY="actual_openrouter_key_value"
     ```
 
-3.  **Load `dotenv` in your application:**
-    Require `dotenv` early in your application's lifecycle, typically in your main application file (e.g., `app.rb`) or an environment setup file (e.g., `config/environment.rb` or `Rakefile` if used with tasks).
+3. **Load `dotenv` in your application:**
+    Require `dotenv` early in your application's lifecycle, typically in your main backend application file (`server/app.rb`) or an environment setup file (e.g., `server/config/environment.rb`).
 
-    For a Sinatra application, you might add this to the top of your `app.rb`:
+    For the Sinatra application (`server/app.rb`), you might add this:
 
     ```ruby
     require 'sinatra'
@@ -78,7 +231,9 @@ The `dotenv` gem is very useful for managing environment variables in your local
     # API keys are now available via ENV['API_KEY_NAME']
     # puts "Gemini Key from .env: #{ENV['GEMINI_API_KEY']}"
     ```
+
     Or, if you prefer to control when it loads (e.g., only in development):
+
     ```ruby
     require 'sinatra'
 
@@ -87,7 +242,7 @@ The `dotenv` gem is very useful for managing environment variables in your local
     end
     ```
 
-By following these steps, your API keys and other configurations in `.env` will be loaded into `ENV` automatically when you run your Sinatra app locally, making them accessible just like any other environment variable. Remember, `.env` is for local development convenience; in production, you should set environment variables directly on your server or hosting platform.
+By following these steps, your API keys and other configurations in `server/.env` will be loaded into `ENV` automatically when you run your Sinatra app locally (within the `server/` directory), making them accessible just like any other environment variable. Remember, `server/.env` is for local development convenience; in production, you should set environment variables directly on your server or hosting platform.
 
 ## 4. Centralized Configuration Access
 
@@ -95,10 +250,10 @@ To make API keys and other settings easily accessible and consistently managed t
 
 **Example: `Config` Module**
 
-Create a module, for instance, in `config/config.rb`:
+Create a module, for instance, in `server/config/config.rb`:
 
 ```ruby
-# config/config.rb
+# server/config/config.rb
 
 module Config
   class MissingKeyError < StandardError; end
@@ -134,13 +289,15 @@ end
 
 **How to Use the `Config` Module:**
 
-1.  **Require the module** in your main application file (e.g., `app.rb`) or where needed:
+1. **Require the module** in your main application file (e.g., `app.rb`) or where needed:
+
     ```ruby
     # In app.rb or config/environment.rb
-    require_relative 'config/config' # Adjust path based on your project structure
+    require_relative 'config/config' # Path relative to files in server/ (e.g., server/app.rb)
     ```
 
-2.  **Access configuration values** anywhere in your application:
+2. **Access configuration values** anywhere in your application:
+
     ```ruby
     # Example usage:
     # api_key = Config.gemini_api_key
@@ -150,19 +307,20 @@ end
     #   puts "Gemini API Key is not set."
     # end
     ```
+
 This `Config` module provides a single, clear point of entry for all environment-driven configurations. If you later decide to change how configuration is loaded (e.g., move to a more complex configuration library), you only need to update this module.
 
 ## 5. Usage in a Service (Example)
 
 Here's how a service class, responsible for interacting with an external AI, might use the `Config` module to retrieve an API key.
 
-Let's say you have a service defined in `services/ai_service.rb`:
+Let's say you have a service defined in `server/app/services/ai_service.rb` (example):
 
 ```ruby
-# services/ai_service.rb
+# server/app/services/ai_service.rb (example)
 
-# Ensure the Config module is loaded, e.g., via require_relative '../config/config'
-# This is often done in a central bootstrap file like app.rb or config/environment.rb
+# Ensure the Config module (server/config/config.rb) is loaded.
+# This is often done in a central bootstrap file like server/app.rb or server/config/environment.rb
 
 module AIServices
   class Gemini
@@ -212,7 +370,7 @@ end
 # How you might use this service in your application:
 #
 # require_relative 'config/config' # Or ensure it's loaded globally
-# require_relative 'services/ai_service'
+# require_relative 'app/services/ai_service' # Adjust path if used from server/app.rb
 #
 # begin
 #   gemini_client = AIServices::Gemini.new
@@ -225,9 +383,10 @@ end
 ```
 
 In this example:
-*   The `AIServices::Gemini` class constructor fetches the `GEMINI_API_KEY` using `Config.gemini_api_key`.
-*   It includes a basic check for the key's presence.
-*   The `get_completion` method would then use this key to authenticate with the Gemini API.
+
+* The `AIServices::Gemini` class constructor fetches the `GEMINI_API_KEY` using `Config.gemini_api_key`.
+* It includes a basic check for the key's presence.
+* The `get_completion` method would then use this key to authenticate with the Gemini API.
 
 This pattern keeps your service classes clean and decoupled from the specifics of how configuration is loaded. They simply request what they need from the `Config` module.
 
@@ -239,9 +398,10 @@ It's crucial for your application to behave predictably if required API keys are
 
 Modify the `Config` module to raise a custom error if a key is missing. This makes the problem immediately obvious.
 
-Updated `config/config.rb`:
+Updated `server/config/config.rb`:
+
 ```ruby
-# config/config.rb
+# server/config/config.rb
 
 module Config
   class MissingKeyError < StandardError; end
@@ -267,8 +427,8 @@ end
 
 **Explanation:**
 
-*   A custom error class `Config::MissingKeyError` is defined for clarity.
-*   Each API key accessor now uses the `|| raise(...)` pattern. If `ENV['API_KEY']` is `nil` (meaning the key is not set), it will raise a `MissingKeyError` with a descriptive message.
+* A custom error class `Config::MissingKeyError` is defined for clarity.
+* Each API key accessor now uses the `|| raise(...)` pattern. If `ENV['API_KEY']` is `nil` (meaning the key is not set), it will raise a `MissingKeyError` with a descriptive message.
 
 **Handling the Error:**
 
