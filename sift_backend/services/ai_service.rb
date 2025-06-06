@@ -103,21 +103,12 @@ data: #{ {error: "Prompt generation failed", type: "PromptError"}.to_json }
 
         # 6. Make the streaming call
         final_message = chat.ask(current_user_prompt_text, with: image_path) do |chunk|
-          if chunk&.content&.is_a?(String)
-            # SSE format: data: { "delta": "chunk content" }
-
-
-            sse_data = { delta: chunk.content }.to_json
-            block.call("data: #{sse_data}
-
-")
+          if chunk&.content&.is_a?(String) && !chunk.content.strip.empty?
+            # Yield raw content instead of formatted SSE
+            block.call(chunk.content)
           elsif chunk&.tool_calls # Handle potential tool calls if the model supports/returns them
-            # You might want to serialize tool_calls if your frontend expects them
             # puts "AIService: Received tool calls: #{chunk.tool_calls}"
-            # sse_data = { tool_calls: chunk.tool_calls }.to_json # Example
-            # block.call("data: #{sse_data}
-
-")
+            # Handle tool calls if necessary, possibly yielding a specific format or ignoring
           end
         end
 
@@ -217,9 +208,9 @@ data: #{error_json}
         puts "AIService: Asking LLM with new user message: \"#{new_user_message_text.lines.first.strip}...\""
 
         final_message = chat.ask(new_user_message_text) do |chunk|
-          if chunk&.content&.is_a?(String)
-            sse_data = { delta: chunk.content }.to_json
-            block.call("data: #{sse_data}\n\n")
+          if chunk&.content&.is_a?(String) && !chunk.content.strip.empty?
+            # Yield raw content instead of formatted SSE
+            block.call(chunk.content)
           elsif chunk&.tool_calls
             # TODO: Consider logging or handling chunk.tool_calls if applicable for chat continuations
             # puts "AIService: Received tool calls in continue_sift_chat: #{chunk.tool_calls}"
