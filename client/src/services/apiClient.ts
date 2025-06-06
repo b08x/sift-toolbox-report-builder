@@ -70,6 +70,7 @@ export interface SiftChatParams {
   modelConfigParams: Record<string, any>;
   preprocessingOutputText?: string;
   systemInstructionOverride?: string;
+  analysisId?: string;
 }
 
 // Helper function to process individual SSE messages
@@ -78,7 +79,8 @@ async function processSseMessage(
   message: string,
   onMessage: (content: string) => void,
   onError: (error: any) => void,
-  onComplete: () => void
+  onComplete: () => void,
+  onAnalysisId?: (analysisId: string) => void
 ): Promise<boolean> {
   const lines = message.split('\n');
   let eventType: string | null = null;
@@ -107,6 +109,18 @@ async function processSseMessage(
       onError({ type: 'UnknownError', message: 'Received error event without data' });
     }
     return true; // Signal that the stream should complete on error
+  } else if (eventType === 'analysis_id') {
+    if (eventData && onAnalysisId) {
+      try {
+        const data = JSON.parse(eventData);
+        if (data.analysis_id) {
+          onAnalysisId(data.analysis_id);
+        }
+      } catch (e) {
+        console.warn('Failed to parse analysis_id data:', eventData);
+      }
+    }
+    return false; // Continue processing more messages
   } else if (eventData) {
     // This is a data message (either with or without explicit event type)
     try {
@@ -127,7 +141,8 @@ export const continueSiftChat = async (
   onMessage: (content: string) => void,
   onError: (error: any) => void,
   onComplete: () => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onAnalysisId?: (analysisId: string) => void
 ): Promise<void> => {
   try {
     const response = await fetch(`${API_BASE_URL}/sift/chat`, {
@@ -176,7 +191,7 @@ export const continueSiftChat = async (
           
           if (message.trim()) {
             try {
-              const shouldComplete = await processSseMessage(message, onMessage, onError, onComplete);
+              const shouldComplete = await processSseMessage(message, onMessage, onError, onComplete, onAnalysisId);
               if (shouldComplete) {
                 return; // Exit the function immediately on completion or error
               }
@@ -190,7 +205,7 @@ export const continueSiftChat = async (
       // Process any remaining buffer content
       if (buffer.trim()) {
         try {
-          const shouldComplete = await processSseMessage(buffer.trim(), onMessage, onError, onComplete);
+          const shouldComplete = await processSseMessage(buffer.trim(), onMessage, onError, onComplete, onAnalysisId);
           if (shouldComplete) {
             return; // Exit if completion or error was handled
           }
@@ -230,7 +245,8 @@ export const sendChatMessage = async (
   onComplete: () => void,
   preprocessingOutputText?: string,
   systemInstructionOverride?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  analysisId?: string
 ): Promise<void> => {
   const params: SiftChatParams = {
     newUserMessageText: messageText,
@@ -239,6 +255,7 @@ export const sendChatMessage = async (
     modelConfigParams,
     preprocessingOutputText,
     systemInstructionOverride,
+    analysisId,
   };
 
   return continueSiftChat(params, onMessage, onError, onComplete, signal);

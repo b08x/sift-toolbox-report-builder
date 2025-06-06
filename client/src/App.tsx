@@ -70,6 +70,7 @@ const App: React.FC = () => {
   const [isChatActive, setIsChatActive] = useState<boolean>(false);
   const [currentSiftQueryDetails, setCurrentSiftQueryDetails] = useState<CurrentSiftQueryDetails | null>(null);
   const [originalQueryForRestart, setOriginalQueryForRestart] = useState<OriginalQueryInfo | null>(null);
+  const [currentAnalysisId, setCurrentAnalysisId] = useState<string | null>(null);
   
   // Model Configuration States
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
@@ -400,7 +401,8 @@ const App: React.FC = () => {
         // Optional parameters
         undefined, // preprocessingOutputText
         undefined, // systemInstructionOverride
-        signal      // abort signal
+        signal,    // abort signal
+        currentAnalysisId || undefined // analysis_id for persistence
       );
 
 

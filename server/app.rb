@@ -393,7 +393,7 @@ post '/api/sift/initiate' do
           processed_image_successfully = true
           settings.logger.info('Image processed successfully.')
           settings.logger.info("Calling AIService.generate_sift_stream with user_input_text: #{has_text ? user_input_text : '[no text provided]'} and image.")
-          AIService.generate_sift_stream(
+          result = AIService.generate_sift_stream(
             user_input_text: has_text ? user_input_text : nil,
             image_file_details: image_details,
             report_type: report_type,
@@ -420,6 +420,13 @@ post '/api/sift/initiate' do
               settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
             end
           end
+          
+          # Send analysis_id if available for follow-up messages
+          if result && result[:persistence_result] && result[:persistence_result][:analysis_id]
+            analysis_id = result[:persistence_result][:analysis_id]
+            settings.logger.info("Sending analysis_id to client: #{analysis_id}")
+            send_sse_event(out, :event, { event: 'analysis_id', data: { analysis_id: analysis_id } })
+          end
           called_service = true
         end
         unless processed_image_successfully
@@ -428,7 +435,7 @@ post '/api/sift/initiate' do
         end
       else
         settings.logger.info("Calling AIService.generate_sift_stream with user_input_text: #{user_input_text} and no image.")
-        AIService.generate_sift_stream(
+        result = AIService.generate_sift_stream(
           user_input_text: user_input_text,
           image_file_details: nil,
           report_type: report_type,
@@ -454,6 +461,13 @@ post '/api/sift/initiate' do
             # Potentially empty string or unexpected content, log it but don't send
             settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
           end
+        end
+        
+        # Send analysis_id if available for follow-up messages
+        if result && result[:persistence_result] && result[:persistence_result][:analysis_id]
+          analysis_id = result[:persistence_result][:analysis_id]
+          settings.logger.info("Sending analysis_id to client: #{analysis_id}")
+          send_sse_event(out, :event, { event: 'analysis_id', data: { analysis_id: analysis_id } })
         end
         called_service = true
       end
@@ -509,11 +523,13 @@ post '/api/sift/chat' do
   model_config_params = params['modelConfigParams'] || {} # Default to empty hash
   preprocessing_output_text = params['preprocessingOutputText'] # Optional
   system_instruction_override = params['systemInstructionOverride'] # Optional
+  analysis_id = params['analysisId'] # Optional - for follow-up message persistence
 
   settings.logger.info "Extracted params: newUserMessageText present: #{!new_user_message_text.to_s.empty?}, chatHistory items: #{chat_history.is_a?(Array) ? chat_history.length : 'N/A'}, selectedModelId: #{selected_model_id}"
   settings.logger.debug "ModelConfigParams: #{model_config_params.inspect}"
   settings.logger.debug "PreprocessingOutputText present: #{!preprocessing_output_text.to_s.empty?}"
   settings.logger.debug "SystemInstructionOverride present: #{!system_instruction_override.to_s.empty?}"
+  settings.logger.debug "AnalysisId: #{analysis_id || 'Not provided'}"
 
   # Validation of required parameters
   if new_user_message_text.to_s.strip.empty?
@@ -562,13 +578,13 @@ post '/api/sift/chat' do
       end
 
       AIService.continue_sift_chat(
-        chat_session_id: request.env['HTTP_X_REQUEST_ID'] || SecureRandom.uuid, # Example session ID
-        newUserMessageText: new_user_message_text,
-        chatHistory: chat_history,
-        selectedModelId: selected_model_id,
-        modelConfigParams: model_config_params,
-        preprocessingOutputText: preprocessing_output_text,
-        systemInstructionOverride: system_instruction_override
+        new_user_message_text: new_user_message_text,
+        chat_history: chat_history,
+        selected_model_id: selected_model_id,
+        model_config_params: model_config_params,
+        system_instruction_override: system_instruction_override,
+        analysis_id: analysis_id,
+        persist_conversation: true
       ) do |content_or_event|
         if out.closed?
           settings.logger.warn('SSE stream for /api/sift/chat closed by client.')
