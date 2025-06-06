@@ -1,4 +1,4 @@
-import { ReportType } from '../types';
+import { ReportType, AIModelConfig } from '../types';
 import { API_BASE_URL } from '../constants';
 
 export interface InitiateSiftAnalysisParams {
@@ -11,6 +11,10 @@ export interface InitiateSiftAnalysisParams {
 
 export interface InitiateSiftAnalysisResponse {
   streamUrl: string;
+}
+
+export interface ModelConfigResponse {
+  models: AIModelConfig[];
 }
 
 export const initiateSiftAnalysis = async (
@@ -51,5 +55,34 @@ export const initiateSiftAnalysis = async (
       throw new Error(`Failed to parse API response or missing streamUrl: ${e.message}`);
     }
     throw new Error('Failed to parse API response or missing streamUrl due to an unknown error.');
+  }
+};
+
+export const fetchModelConfigurations = async (): Promise<AIModelConfig[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/models/config`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Failed to fetch model configurations (${response.status}): ${errorBody}`);
+    }
+
+    const data: ModelConfigResponse = await response.json();
+    
+    if (!data || !Array.isArray(data.models)) {
+      throw new Error('Invalid response format: expected models array');
+    }
+
+    return data.models;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error fetching model configurations: ${error.message}`);
+    }
+    throw new Error('Unknown error occurred while fetching model configurations');
   }
 };

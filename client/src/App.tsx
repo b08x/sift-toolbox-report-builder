@@ -1,9 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-// Removed GoogleGenAI, Chat, Part, OpenAI
 import { v4 as uuidv4 } from 'uuid';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 import { Sidebar } from './components/Sidebar';
 import { InputForm } from './components/InputForm';
@@ -15,21 +12,14 @@ import { UserQueryPanel } from './components/UserQueryPanel';
 import { 
   ReportType, 
   ChatMessage, 
-  GroundingChunk, 
   OriginalQueryInfo, 
   AIProvider, 
   AIModelConfig, 
   ConfigurableParams,
   CurrentSiftQueryDetails
 } from './types';
-import { 
-  SIFT_FULL_CHECK_PROMPT, 
-  SIFT_CONTEXT_REPORT_PROMPT, 
-  SIFT_COMMUNITY_NOTE_PROMPT,
-  SIFT_CHAT_SYSTEM_PROMPT
-} from './prompts';
-import { AVAILABLE_PROVIDERS_MODELS } from './models.config';
-import { initiateSiftAnalysis } from './services/apiClient';
+// Prompts are now handled by the backend
+import { initiateSiftAnalysis, fetchModelConfigurations } from './services/apiClient';
 
 // Helper function to update the last AI message that is currently loading
 const updateLastLoadingAiMessage = (
@@ -81,9 +71,14 @@ const App: React.FC = () => {
   const [currentSiftQueryDetails, setCurrentSiftQueryDetails] = useState<CurrentSiftQueryDetails | null>(null);
   const [originalQueryForRestart, setOriginalQueryForRestart] = useState<OriginalQueryInfo | null>(null);
   
+  // Model Configuration States
+  const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
+  const [modelsLoading, setModelsLoading] = useState<boolean>(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  
   // Model Selection States
   const [selectedProviderKey, setSelectedProviderKey] = useState<AIProvider>(AIProvider.GOOGLE_GEMINI);
-  const [selectedModelId, setSelectedModelId] = useState<string>(AVAILABLE_PROVIDERS_MODELS.find(m => m.provider === AIProvider.GOOGLE_GEMINI)?.id || AVAILABLE_PROVIDERS_MODELS[0].id);
+  const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [modelConfigParams, setModelConfigParams] = useState<ConfigurableParams>({});
 
   // Gemini Preprocessing state (enableGeminiPreprocessing, geminiPreprocessingOutputText) removed as backend handles this.
@@ -93,12 +88,49 @@ const App: React.FC = () => {
   // const abortControllerRef = useRef<AbortController | null>(null); // Will be removed or managed by SSE handler
   const abortControllerRef = useRef<AbortController | null>(null); // Keeping for handleStopGeneration, but not used in handleStartChat's core API call path
 
+  // Fetch model configurations on component mount
+  useEffect(() => {
+    const loadModelConfigurations = async () => {
+      try {
+        setModelsLoading(true);
+        setModelsError(null);
+        
+        const models = await fetchModelConfigurations();
+        setAvailableModels(models);
+        
+        // Set default selections if models are available
+        if (models.length > 0) {
+          // Try to find a Google Gemini model first, then fallback to first available
+          const geminiModel = models.find(m => m.provider === AIProvider.GOOGLE_GEMINI);
+          const defaultModel = geminiModel || models[0];
+          
+          setSelectedProviderKey(defaultModel.provider);
+          setSelectedModelId(defaultModel.id);
+          
+          // Initialize default parameters for the selected model
+          const defaultParams: ConfigurableParams = {};
+          defaultModel.parameters.forEach(param => {
+            defaultParams[param.key] = param.defaultValue;
+          });
+          setModelConfigParams(defaultParams);
+        }
+      } catch (error) {
+        console.error('Failed to load model configurations:', error);
+        setModelsError(error instanceof Error ? error.message : 'Failed to load model configurations');
+      } finally {
+        setModelsLoading(false);
+      }
+    };
+
+    loadModelConfigurations();
+  }, []);
+
   // Removed useEffect for API key initialization (lines 107-124)
   // Removed useEffect for AI client initialization (lines 142-204)
 
   const getSelectedModelConfig = useCallback(() => {
-    return AVAILABLE_PROVIDERS_MODELS.find(m => m.id === selectedModelId && m.provider === selectedProviderKey);
-  }, [selectedModelId, selectedProviderKey]);
+    return availableModels.find(m => m.id === selectedModelId && m.provider === selectedProviderKey);
+  }, [selectedModelId, selectedProviderKey, availableModels]);
 
   useEffect(() => {
     const currentModelConfig = getSelectedModelConfig();
@@ -119,11 +151,11 @@ const App: React.FC = () => {
 
   const handleSelectProvider = (provider: AIProvider) => {
     setSelectedProviderKey(provider);
-    const firstModel = AVAILABLE_PROVIDERS_MODELS.find(m => m.provider === provider);
+    const firstModel = availableModels.find(m => m.provider === provider);
     if (firstModel) {
       setSelectedModelId(firstModel.id);
     } else {
-      setSelectedModelId(AVAILABLE_PROVIDERS_MODELS[0].id); // Fallback
+      setSelectedModelId(availableModels[0]?.id || ''); // Fallback
     }
     handleClearChatAndReset(false); // Clear chat when provider changes
   };
@@ -131,7 +163,7 @@ const App: React.FC = () => {
   const handleSelectModel = (modelId: string) => {
     setSelectedModelId(modelId);
     // Potentially reset params or keep them if compatible
-    const currentModelConfig = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === modelId);
+    const currentModelConfig = availableModels.find(m => m.id === modelId);
     if (currentModelConfig) {
       const newParams: ConfigurableParams = {};
       currentModelConfig.parameters.forEach(param => {
@@ -154,7 +186,7 @@ const App: React.FC = () => {
 
   const getSystemPromptForSelectedModel = (): string => {
     const modelConfig = getSelectedModelConfig();
-    let basePrompt = SIFT_CHAT_SYSTEM_PROMPT; // Default SIFT chat prompt
+    let basePrompt = 'You are a SIFT (Stop, Investigate, Find, Trace) methodology assistant. You help users fact-check claims, understand context, and analyze information.'; // Default SIFT chat prompt
 
     if (modelConfig?.provider === AIProvider.OPENAI || modelConfig?.provider === AIProvider.OPENROUTER) {
         // OpenAI/OpenRouter might benefit from a slightly more direct system prompt for chat
@@ -386,7 +418,7 @@ const App: React.FC = () => {
       //   const lastAiMessage = chatMessages.filter(m => m.sender === 'ai' && !m.isLoading).pop();
 
       //   if (lastAiMessage && geminiPreprocessingOutputText) { // geminiPreprocessingOutputText is removed
-      //       const lastAiModelConfig = AVAILABLE_PROVIDERS_MODELS.find(m => m.id === lastAiMessage.modelId);
+      //       const lastAiModelConfig = availableModels.find(m => m.id === lastAiMessage.modelId);
       //       if (lastAiModelConfig?.provider === AIProvider.OPENROUTER && enableGeminiPreprocessing) { // enableGeminiPreprocessing is removed
       //            systemPromptContent = `You are continuing a SIFT analysis. A previous AI (Gemini) provided an initial report (which you analyzed). The user is now following up on your analysis of that Gemini report. The Gemini report was: "..."`; // Simplified
       //       }
@@ -618,7 +650,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col md:flex-row h-screen max-h-screen bg-slate-900 text-slate-100">
       <Sidebar
-        availableModels={AVAILABLE_PROVIDERS_MODELS}
+        availableModels={availableModels}
         selectedProviderKey={selectedProviderKey}
         onSelectProvider={handleSelectProvider}
         selectedModelId={selectedModelId}
@@ -627,6 +659,8 @@ const App: React.FC = () => {
         onModelConfigParamChange={handleModelConfigChange}
         onClearChatAndReset={() => handleClearChatAndReset(true)}
         isChatActive={isChatActive}
+        modelsLoading={modelsLoading}
+        modelsError={modelsError}
         // enableGeminiPreprocessing prop removed
         // onToggleGeminiPreprocessing prop removed
       />
