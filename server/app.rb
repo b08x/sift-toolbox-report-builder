@@ -140,6 +140,140 @@ get '/api/health' do
   { message: 'OK', timestamp: Time.now.iso8601 }.to_json
 end
 
+# Model configuration endpoint - serves AI model configurations 
+# derived from ruby_llm.models merged with SIFT UI parameters
+get '/api/models/config' do
+  settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
+  content_type :json
+  
+  begin
+    models = RubyLLM.models.map do |model|
+      # Map RubyLLM model to frontend format
+      provider = case model.provider
+                when 'anthropic' then 'OPENROUTER' # Anthropic models via OpenRouter
+                when 'openai' then 'OPENAI'
+                when 'google' then 'GOOGLE_GEMINI'
+                when 'bedrock' then 'OPENROUTER' # AWS Bedrock models via OpenRouter
+                else 'OPENROUTER' # Default fallback
+                end
+      
+      # Determine vision support based on modalities
+      supports_vision = model.modalities.input.include?('image')
+      
+      # Standard SIFT parameters based on model capabilities
+      parameters = []
+      
+      # Temperature parameter (most models support this)
+      parameters << {
+        key: 'temperature',
+        label: 'Temperature',
+        type: 'slider',
+        min: 0,
+        max: model.provider == 'openai' ? 2 : 1,
+        step: 0.01,
+        defaultValue: 0.7,
+        description: 'Controls randomness. Lower for more predictable, higher for more creative.'
+      }
+      
+      # Top-P parameter 
+      parameters << {
+        key: 'topP',
+        label: 'Top-P',
+        type: 'slider',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        defaultValue: 0.95,
+        description: 'Nucleus sampling. Considers tokens with probability mass adding up to topP.'
+      }
+      
+      # Add max_tokens for OpenAI/OpenRouter models
+      if ['openai', 'openrouter'].include?(model.provider.downcase)
+        max_tokens = model.max_output_tokens || 4096
+        parameters << {
+          key: 'max_tokens',
+          label: 'Max Tokens',
+          type: 'slider',
+          min: 50,
+          max: [max_tokens, 32000].min, # Cap at reasonable UI limit
+          step: 50,
+          defaultValue: [max_tokens / 4, 1024].max,
+          description: 'Maximum number of tokens to generate in the completion.'
+        }
+      end
+      
+      # Add Top-K for Google models
+      if model.provider == 'google' || model.family&.include?('gemini')
+        parameters << {
+          key: 'topK',
+          label: 'Top-K',
+          type: 'slider',
+          min: 1,
+          max: 100,
+          step: 1,
+          defaultValue: 40,
+          description: 'Considers the top K most probable tokens.'
+        }
+      end
+
+      {
+        id: model.id,
+        name: model.name,
+        provider: provider,
+        supportsGoogleSearch: model.provider == 'google' && supports_vision, # Heuristic
+        supportsVision: supports_vision,
+        parameters: parameters,
+        # Additional metadata for debugging/development
+        metadata: {
+          original_provider: model.provider,
+          context_window: model.context_window,
+          max_output_tokens: model.max_output_tokens,
+          capabilities: model.capabilities,
+          family: model.family
+        }
+      }
+    end
+    
+    # Filter to only models that have required API keys configured
+    available_models = models.select do |model_config|
+      case model_config[:metadata][:original_provider]
+      when 'google'
+        # Google models need Gemini API key
+        begin
+          Config.gemini_api_key
+          true
+        rescue Config::MissingKeyError
+          false
+        end
+      when 'openai'
+        # OpenAI models need OpenAI API key
+        begin
+          Config.openai_api_key
+          true
+        rescue Config::MissingKeyError
+          false
+        end
+      else
+        # Anthropic, Bedrock, and other models via OpenRouter
+        begin
+          Config.openrouter_api_key
+          true
+        rescue Config::MissingKeyError
+          false
+        end
+      end
+    end
+    
+    { models: available_models }.to_json
+    
+  rescue => e
+    settings.logger.error "Error generating model config: #{e.message}"
+    settings.logger.error e.backtrace.join("\n")
+    status 500
+    { error: { type: 'ModelConfigError', message: "Failed to load model configurations: #{e.message}" } }.to_json
+  end
+end
+
 # New route for testing logging
 get '/api/test_log' do
   settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
