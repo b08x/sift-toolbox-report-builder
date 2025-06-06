@@ -7,6 +7,7 @@ require 'securerandom' # For generating unique IDs
 require_relative 'config/database' # Load database configuration
 require_relative 'services/sift_service'
 require_relative 'services/ai_service' # For AIService.continue_sift_chat
+require_relative 'lib/image_handler'
 
 class MyCustomError < StandardError; end
 
@@ -221,37 +222,75 @@ post '/api/sift/initiate' do
   stream(:keep_open) do |out|
     settings.logger.info "SSE stream opened for /api/sift/initiate. Client: #{request.ip}"
     begin
-      service_args = {
-        report_type: report_type,
-        selected_model_id: selected_model_id,
-        model_config_params: model_config_params
-      }
-      service_args[:text] = user_input_text if has_text
-      # Pass the file hash directly, service will handle :tempfile
-      service_args[:image_file] = user_image_file_data if has_image
-
-      SiftService.initiate_analysis(**service_args) do |chunk|
-        if out.closed?
-          settings.logger.warn "SSE stream closed by client, cannot send chunk: #{chunk.strip}"
-          break
+      called_service = false
+      if has_image
+        processed_image_successfully = false
+        ImageHandler.process_uploaded_image(user_image_file_data) do |image_details|
+          processed_image_successfully = true
+          settings.logger.info("Image processed successfully.")
+          settings.logger.info("Calling AIService.generate_sift_stream with user_input_text: #{has_text ? user_input_text : '[no text provided]'} and image.")
+          AIService.generate_sift_stream(
+            user_input_text: has_text ? user_input_text : nil,
+            image_file_details: image_details,
+            report_type: report_type,
+            selected_model_id: selected_model_id,
+            model_config_params: model_config_params,
+            chat_history: []
+          ) do |chunk|
+            if out.closed?
+              settings.logger.warn("Stream closed by client during AIService.generate_sift_stream with image")
+              break
+            end
+            settings.logger.debug("Streaming chunk: #{chunk}")
+            out << chunk
+          end
+          called_service = true
         end
-        settings.logger.debug "Streaming chunk: #{chunk.strip}"
-        out << chunk
+        unless processed_image_successfully
+          settings.logger.error("Failed to process uploaded image.")
+          raise MyCustomError, "Failed to process uploaded image."
+        end
+      else
+        settings.logger.info("Calling AIService.generate_sift_stream with user_input_text: #{user_input_text} and no image.")
+        AIService.generate_sift_stream(
+          user_input_text: user_input_text,
+          image_file_details: nil,
+          report_type: report_type,
+          selected_model_id: selected_model_id,
+          model_config_params: model_config_params,
+          chat_history: []
+        ) do |chunk|
+          if out.closed?
+            settings.logger.warn("Stream closed by client during AIService.generate_sift_stream without image")
+            break
+          end
+          settings.logger.debug("Streaming chunk: #{chunk}")
+          out << chunk
+        end
+        called_service = true
       end
-      settings.logger.info "SiftService.initiate_analysis stream completed for client: #{request.ip}"
 
-    rescue => e # Catch any error from SiftService or within the stream block
-      settings.logger.error "Error during SSE streaming or SiftService execution: #{e.class.name} - #{e.message}"
-      settings.logger.error e.backtrace.join("\n")
+      if called_service && !out.closed?
+        settings.logger.info("AIService.generate_sift_stream completed. Sending 'complete' event.")
+        out << "event: complete\ndata: #{ { message: 'Stream finished' }.to_json }\n\n"
+      end
+    rescue MyCustomError => e
+      settings.logger.error("MyCustomError in /api/sift/initiate: #{e.message}")
       unless out.closed?
-        # It's good practice to send a structured error event.
-        # The SiftService itself might yield a more specific error event if the error originates there.
-        # This is a fallback.
-        error_data = { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" }.to_json
-        out << "event: error\ndata: #{error_data}\n\n"
+        out << "event: error\ndata: #{ { type: e.class.name, message: e.message }.to_json }\n\n"
+      end
+    rescue RubyLLM::Error => e
+      settings.logger.error("RubyLLM::Error in /api/sift/initiate: #{e.message} - Details: #{e.try(:response)&.body}")
+      unless out.closed?
+        out << "event: error\ndata: #{ { type: e.class.name, message: e.message, details: e.try(:response)&.body }.to_json }\n\n"
+      end
+    rescue => e
+      settings.logger.error("Error in /api/sift/initiate: #{e.message}\n#{e.backtrace.join("\n")}")
+      unless out.closed?
+        out << "event: error\ndata: #{ { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" }.to_json }\n\n"
       end
     ensure
-      settings.logger.info "SSE stream ensure block reached. Closing stream for client: #{request.ip}"
+      settings.logger.info("Closing stream for /api/sift/initiate for client: #{request.ip}")
       # Sinatra's stream(:keep_open) handles closing the stream when the block exits.
     end
     settings.logger.info "SSE stream block finished for client: #{request.ip}"
