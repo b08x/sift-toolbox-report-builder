@@ -8,6 +8,7 @@ gem 'rake', '~> 13.0'
 gem 'sequel', '~> 5.7' # Or a more recent version
 gem 'pg', '~> 1.5'     # Or a more recent version
 gem 'dotenv', '~> 2.8', groups: [:development, :test]
+gem 'ruby_llm'
 
 group :development, :test do
   gem 'rubocop', '~> 1.50', require: false # Or specify a more recent version
