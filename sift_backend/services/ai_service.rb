@@ -149,23 +149,19 @@ data: #{error_json}
 
     # Method to continue a chat session, streaming the response.
     #
-    # @param chat_session_id [String, nil] Optional, for logging or future use.
-    # @param newUserMessageText [String] The new message text from the user.
-    # @param chatHistory [Array<Hash>] Array of previous messages [{role: "user", content: "..."}, ...].
-    # @param selectedModelId [String] The ID of the model to use.
-    # @param modelConfigParams [Hash] Configuration for the model (e.g., { temperature: 0.7 }).
-    # @param preprocessingOutputText [String, nil] Optional text from a preprocessing step to be inserted as assistant context.
-    # @param systemInstructionOverride [String, nil] Optional override for system instructions.
+    # @param new_user_message_text [String] The new message text from the user.
+    # @param chat_history [Array<Hash>] Array of previous messages [{role: "user", content: "..."}, ...].
+    # @param selected_model_id [String] The ID of the model to use.
+    # @param model_config_params [Hash] Configuration for the model (e.g., { temperature: 0.7 }).
+    # @param system_instruction_override [String, nil] Optional override for system instructions.
     # @param block [Proc] Block to yield SSE formatted chunks to.
     # @return [RubyLLM::Message, nil] The final AI message object for persistence, or nil if an error occurs.
     def continue_sift_chat(
-      chat_session_id: nil,
-      newUserMessageText:,
-      chatHistory:,
-      selectedModelId:,
-      modelConfigParams: {},
-      preprocessingOutputText: nil,
-      systemInstructionOverride: nil,
+      new_user_message_text:,
+      chat_history:,
+      selected_model_id:,
+      model_config_params: {},
+      system_instruction_override: nil,
       &block
     )
       unless block_given?
@@ -173,33 +169,31 @@ data: #{error_json}
         return nil
       end
 
-      puts "AIService: Continuing SIFT chat with model #{selectedModelId}"
-      puts "AIService: Session ID: #{chat_session_id || 'N/A'}, Model Config: #{modelConfigParams}"
-      puts "AIService: System Instruction Override: #{systemInstructionOverride.nil? ? 'No' : 'Yes'}"
-      puts "AIService: Preprocessing Output Text: #{preprocessingOutputText.nil? ? 'No' : 'Yes'}"
+      puts "AIService: Continuing SIFT chat with model #{selected_model_id}"
+      puts "AIService: Model Config: #{model_config_params}"
+      puts "AIService: System Instruction Override: #{system_instruction_override.nil? ? 'No' : 'Yes'}"
 
       begin
-        chat = RubyLLM.chat(model: selectedModelId)
+        chat = RubyLLM.chat(model: selected_model_id)
 
         # 1. Apply model configurations
-        if modelConfigParams[:temperature]
-          chat.with_temperature(modelConfigParams[:temperature].to_f)
+        model_config_params.each do |k, v|
+          chat.send("with_#{k}", v) if chat.respond_to?("with_#{k}")
         end
-        # TODO: Consider adding other common params like max_tokens, top_p if they are likely to be used
 
         # 2. Set system instructions
-        if systemInstructionOverride && !systemInstructionOverride.strip.empty?
+        if system_instruction_override && !system_instruction_override.strip.empty?
           puts "AIService: Using system instruction override."
-          chat.with_instructions(systemInstructionOverride)
+          chat.with_instructions(system_instruction_override, replace: true)
         else
           puts "AIService: Using default SIFT chat system prompt."
-          chat.with_instructions(Prompts.get_prompt(:sift_chat_system_prompt))
+          chat.with_instructions(Prompts.get_prompt(:sift_chat_system_prompt), replace: true)
         end
 
         # 3. Load chat history
-        if chatHistory && !chatHistory.empty?
-          puts "AIService: Loading chat history (#{chatHistory.length} messages)"
-          chatHistory.each do |msg|
+        if chat_history && !chat_history.empty?
+          puts "AIService: Loading chat history (#{chat_history.length} messages)"
+          chat_history.each do |msg|
             role = msg["role"] || msg[:role] # Handle string or symbol keys
             content = msg["content"] || msg[:content]
 
@@ -212,23 +206,17 @@ data: #{error_json}
           end
         end
 
-        # 4. Add preprocessing output as context (if any)
-        if preprocessingOutputText && !preprocessingOutputText.strip.empty?
-          puts "AIService: Adding preprocessing output text as assistant context."
-          chat.messages.build(role: :assistant, content: preprocessingOutputText)
-        end
-
-        # 5. Add the new user message
-        if newUserMessageText.nil? || newUserMessageText.strip.empty?
+        # 4. Add the new user message
+        if new_user_message_text.nil? || new_user_message_text.strip.empty?
           error_message = "AIService: Error (continue_sift_chat) - New user message text is empty."
           puts error_message
           yield "event: error\ndata: #{ {error: "User message is empty", type: "UserInputError"}.to_json }\n\n"
           return nil
         end
 
-        puts "AIService: Asking LLM with new user message: \"#{newUserMessageText.lines.first.strip}...\""
+        puts "AIService: Asking LLM with new user message: \"#{new_user_message_text.lines.first.strip}...\""
 
-        final_message = chat.ask(newUserMessageText) do |chunk|
+        final_message = chat.ask(new_user_message_text) do |chunk|
           if chunk&.content&.is_a?(String)
             sse_data = { delta: chunk.content }.to_json
             block.call("data: #{sse_data}\n\n")
