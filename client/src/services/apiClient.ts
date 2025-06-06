@@ -58,6 +58,109 @@ export const initiateSiftAnalysis = async (
   }
 };
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface SiftChatParams {
+  newUserMessageText: string;
+  chatHistory: ChatMessage[];
+  selectedModelId: string;
+  modelConfigParams: Record<string, any>;
+  preprocessingOutputText?: string;
+  systemInstructionOverride?: string;
+}
+
+export const continueSiftChat = async (
+  params: SiftChatParams,
+  onMessage: (content: string) => void,
+  onError: (error: any) => void,
+  onComplete: () => void
+): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/sift/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Chat request failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    const decoder = new TextDecoder();
+    
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.slice(6);
+              if (jsonStr.trim()) {
+                const data = JSON.parse(jsonStr);
+                if (data.delta) {
+                  onMessage(data.delta);
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to parse SSE data:', line);
+            }
+          } else if (line.startsWith('event: ')) {
+            const eventType = line.slice(7).trim();
+            if (eventType === 'complete') {
+              onComplete();
+              break;
+            } else if (eventType === 'error') {
+              const nextLine = lines[lines.indexOf(line) + 1];
+              if (nextLine && nextLine.startsWith('data: ')) {
+                try {
+                  const errorData = JSON.parse(nextLine.slice(6));
+                  onError(errorData);
+                } catch (e) {
+                  onError({ type: 'ParseError', message: 'Failed to parse error data' });
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      onError({
+        type: 'NetworkError',
+        message: `Error during chat request: ${error.message}`
+      });
+    } else {
+      onError({
+        type: 'UnknownError',
+        message: 'An unknown error occurred during chat request'
+      });
+    }
+  }
+};
+
 export const fetchModelConfigurations = async (): Promise<AIModelConfig[]> => {
   try {
     const response = await fetch(`${API_BASE_URL}/models/config`, {

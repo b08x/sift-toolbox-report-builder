@@ -44,8 +44,8 @@ end
 # For development, allow requests from the frontend development server.
 # In production, this should be set to the actual frontend domain.
 set :allow_origin, ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
-set :allow_methods, [:get, :post, :put, :delete, :options]
-set :allow_headers, ['Content-Type', 'Authorization', 'X-Requested-With']
+set :allow_methods, %i[get post put delete options]
+set :allow_headers, %w[Content-Type Authorization X-Requested-With]
 set :expose_headers, ['Content-Type'] # Optional: Add any other headers you want to expose
 
 # Centralized Error Handling
@@ -92,7 +92,7 @@ error StandardError do |e|
   error_message = if settings.development?
                     "Internal Server Error: #{e.message}"
                   else
-                    "An unexpected error occurred. Please try again later."
+                    'An unexpected error occurred. Please try again later.'
                   end
   error_details = { type: e.class.name, message: error_message }
 
@@ -140,29 +140,29 @@ get '/api/health' do
   { message: 'OK', timestamp: Time.now.iso8601 }.to_json
 end
 
-# Model configuration endpoint - serves AI model configurations 
+# Model configuration endpoint - serves AI model configurations
 # derived from ruby_llm.models merged with SIFT UI parameters
 get '/api/models/config' do
   settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
   content_type :json
-  
+
   begin
     models = RubyLLM.models.map do |model|
       # Map RubyLLM model to frontend format
       provider = case model.provider
-                when 'anthropic' then 'OPENROUTER' # Anthropic models via OpenRouter
-                when 'openai' then 'OPENAI'
-                when 'google' then 'GOOGLE_GEMINI'
-                when 'bedrock' then 'OPENROUTER' # AWS Bedrock models via OpenRouter
-                else 'OPENROUTER' # Default fallback
-                end
-      
+                 when 'anthropic' then 'OPENROUTER' # Anthropic models via OpenRouter
+                 when 'openai' then 'OPENAI'
+                 when 'google' then 'GOOGLE_GEMINI'
+                 when 'bedrock' then 'OPENROUTER' # AWS Bedrock models via OpenRouter
+                 else 'OPENROUTER' # Default fallback
+                 end
+
       # Determine vision support based on modalities
       supports_vision = model.modalities.input.include?('image')
-      
+
       # Standard SIFT parameters based on model capabilities
       parameters = []
-      
+
       # Temperature parameter (most models support this)
       parameters << {
         key: 'temperature',
@@ -174,8 +174,8 @@ get '/api/models/config' do
         defaultValue: 0.7,
         description: 'Controls randomness. Lower for more predictable, higher for more creative.'
       }
-      
-      # Top-P parameter 
+
+      # Top-P parameter
       parameters << {
         key: 'topP',
         label: 'Top-P',
@@ -186,22 +186,22 @@ get '/api/models/config' do
         defaultValue: 0.95,
         description: 'Nucleus sampling. Considers tokens with probability mass adding up to topP.'
       }
-      
+
       # Add max_tokens for OpenAI/OpenRouter models
-      if ['openai', 'openrouter'].include?(model.provider.downcase)
+      if %w[openai openrouter].include?(model.provider.downcase)
         max_tokens = model.max_output_tokens || 4096
         parameters << {
           key: 'max_tokens',
           label: 'Max Tokens',
           type: 'slider',
           min: 50,
-          max: [max_tokens, 32000].min, # Cap at reasonable UI limit
+          max: [max_tokens, 32_000].min, # Cap at reasonable UI limit
           step: 50,
           defaultValue: [max_tokens / 4, 1024].max,
           description: 'Maximum number of tokens to generate in the completion.'
         }
       end
-      
+
       # Add Top-K for Google models
       if model.provider == 'google' || model.family&.include?('gemini')
         parameters << {
@@ -233,7 +233,7 @@ get '/api/models/config' do
         }
       }
     end
-    
+
     # Filter to only models that have required API keys configured
     available_models = models.select do |model_config|
       case model_config[:metadata][:original_provider]
@@ -263,10 +263,9 @@ get '/api/models/config' do
         end
       end
     end
-    
+
     { models: available_models }.to_json
-    
-  rescue => e
+  rescue StandardError => e
     settings.logger.error "Error generating model config: #{e.message}"
     settings.logger.error e.backtrace.join("\n")
     status 500
@@ -277,28 +276,28 @@ end
 # New route for testing logging
 get '/api/test_log' do
   settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
-  settings.logger.warn "This is a test warning message."
-  settings.logger.error "This is a test error message."
+  settings.logger.warn 'This is a test warning message.'
+  settings.logger.error 'This is a test error message.'
   content_type :json
-  { message: "Test log messages created. Check your logs." }.to_json
+  { message: 'Test log messages created. Check your logs.' }.to_json
 end
 
 # --- Example Routes for Error Handling Testing ---
 
 # Route to test MyCustomError handler
 get '/api/test_custom_error' do
-  settings.logger.info "Triggering MyCustomError..."
-  raise MyCustomError, "This is a test of the custom error handling."
+  settings.logger.info 'Triggering MyCustomError...'
+  raise MyCustomError, 'This is a test of the custom error handling.'
 end
 
 # Route to test StandardError handler
 get '/api/test_standard_error' do
-  settings.logger.info "Triggering a StandardError..."
-  raise StandardError, "This is a test of the generic StandardError handling."
+  settings.logger.info 'Triggering a StandardError...'
+  raise StandardError, 'This is a test of the generic StandardError handling.'
 end
 
 post '/api/sift/initiate' do
-  settings.logger.info "POST /api/sift/initiate - Received request"
+  settings.logger.info 'POST /api/sift/initiate - Received request'
 
   # Parameter extraction
   user_input_text = params['userInputText']
@@ -323,18 +322,21 @@ post '/api/sift/initiate' do
   has_image = user_image_file_data && user_image_file_data[:tempfile] && user_image_file_data[:filename]
 
   unless has_text || has_image
-    settings.logger.warn "Validation failed: userInputText or userImageFile is required."
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'Either userInputText or userImageFile must be provided and contain data.' } }.to_json
+    settings.logger.warn 'Validation failed: userInputText or userImageFile is required.'
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'MissingParameterError', message: 'Either userInputText or userImageFile must be provided and contain data.' } }.to_json
   end
 
-  if (report_type.nil? || report_type.strip.empty?)
-    settings.logger.warn "Validation failed: reportType is required."
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'reportType is a required parameter.' } }.to_json
+  if report_type.nil? || report_type.strip.empty?
+    settings.logger.warn 'Validation failed: reportType is required.'
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'MissingParameterError', message: 'reportType is a required parameter.' } }.to_json
   end
 
-  if (selected_model_id.nil? || selected_model_id.strip.empty?)
-    settings.logger.warn "Validation failed: selectedModelId is required."
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'selectedModelId is a required parameter.' } }.to_json
+  if selected_model_id.nil? || selected_model_id.strip.empty?
+    settings.logger.warn 'Validation failed: selectedModelId is required.'
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'MissingParameterError', message: 'selectedModelId is a required parameter.' } }.to_json
   end
 
   model_config_params = {}
@@ -342,12 +344,14 @@ post '/api/sift/initiate' do
     begin
       model_config_params = JSON.parse(model_config_params_json)
       unless model_config_params.is_a?(Hash)
-        settings.logger.warn "Validation failed: modelConfigParams is not a valid JSON object string."
-        halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: 'modelConfigParams must be a string representing a valid JSON object.' } }.to_json
+        settings.logger.warn 'Validation failed: modelConfigParams is not a valid JSON object string.'
+        halt 400, { 'Content-Type' => 'application/json' },
+             { error: { type: 'InvalidParameterError', message: 'modelConfigParams must be a string representing a valid JSON object.' } }.to_json
       end
     rescue JSON::ParserError => e
       settings.logger.warn "JSON Parsing Error for modelConfigParams: #{e.message}"
-      halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: "Invalid JSON format for modelConfigParams: #{e.message}" } }.to_json
+      halt 400, { 'Content-Type' => 'application/json' },
+           { error: { type: 'InvalidParameterError', message: "Invalid JSON format for modelConfigParams: #{e.message}" } }.to_json
     end
   else
     # If modelConfigParams is not provided or is an empty string, use an empty hash
@@ -363,7 +367,7 @@ post '/api/sift/initiate' do
         processed_image_successfully = false
         ImageHandler.process_uploaded_image(user_image_file_data) do |image_details|
           processed_image_successfully = true
-          settings.logger.info("Image processed successfully.")
+          settings.logger.info('Image processed successfully.')
           settings.logger.info("Calling AIService.generate_sift_stream with user_input_text: #{has_text ? user_input_text : '[no text provided]'} and image.")
           AIService.generate_sift_stream(
             user_input_text: has_text ? user_input_text : nil,
@@ -374,11 +378,11 @@ post '/api/sift/initiate' do
             chat_history: []
           ) do |content_or_event|
             if out.closed?
-              settings.logger.warn("Stream closed by client during AIService.generate_sift_stream with image")
+              settings.logger.warn('Stream closed by client during AIService.generate_sift_stream with image')
               break # Exit the loop if client disconnected
             end
 
-            if content_or_event.start_with?("event:")
+            if content_or_event.start_with?('event:')
               # This is an error event already formatted by AIService
               settings.logger.debug("Streaming pre-formatted event from AIService: #{content_or_event.strip}")
               out << content_or_event
@@ -396,8 +400,8 @@ post '/api/sift/initiate' do
           called_service = true
         end
         unless processed_image_successfully
-          settings.logger.error("Failed to process uploaded image.")
-          raise MyCustomError, "Failed to process uploaded image."
+          settings.logger.error('Failed to process uploaded image.')
+          raise MyCustomError, 'Failed to process uploaded image.'
         end
       else
         settings.logger.info("Calling AIService.generate_sift_stream with user_input_text: #{user_input_text} and no image.")
@@ -410,11 +414,11 @@ post '/api/sift/initiate' do
           chat_history: []
         ) do |content_or_event|
           if out.closed?
-            settings.logger.warn("Stream closed by client during AIService.generate_sift_stream without image")
+            settings.logger.warn('Stream closed by client during AIService.generate_sift_stream without image')
             break # Exit the loop if client disconnected
           end
 
-          if content_or_event.start_with?("event:")
+          if content_or_event.start_with?('event:')
             # This is an error event already formatted by AIService
             settings.logger.debug("Streaming pre-formatted event from AIService: #{content_or_event.strip}")
             out << content_or_event
@@ -434,22 +438,22 @@ post '/api/sift/initiate' do
 
       if called_service && !out.closed?
         settings.logger.info("AIService.generate_sift_stream completed. Sending 'complete' event.")
-        out << "event: complete\ndata: #{ { message: 'Stream finished' }.to_json }\n\n"
+        out << "event: complete\ndata: #{{ message: 'Stream finished' }.to_json}\n\n"
       end
     rescue MyCustomError => e
       settings.logger.error("MyCustomError in /api/sift/initiate: #{e.message}")
-      unless out.closed?
-        out << "event: error\ndata: #{ { type: e.class.name, message: e.message }.to_json }\n\n"
-      end
+      out << "event: error\ndata: #{{ type: e.class.name, message: e.message }.to_json}\n\n" unless out.closed?
     rescue RubyLLM::Error => e
       settings.logger.error("RubyLLM::Error in /api/sift/initiate: #{e.message} - Details: #{e.try(:response)&.body}")
       unless out.closed?
-        out << "event: error\ndata: #{ { type: e.class.name, message: e.message, details: e.try(:response)&.body }.to_json }\n\n"
+        out << "event: error\ndata: #{{ type: e.class.name, message: e.message,
+                                        details: e.try(:response)&.body }.to_json}\n\n"
       end
-    rescue => e
+    rescue StandardError => e
       settings.logger.error("Error in /api/sift/initiate: #{e.message}\n#{e.backtrace.join("\n")}")
       unless out.closed?
-        out << "event: error\ndata: #{ { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" }.to_json }\n\n"
+        out << "event: error\ndata: #{{ type: 'StreamingError',
+                                        message: "An error occurred while processing your request: #{e.message}" }.to_json}\n\n"
       end
     ensure
       settings.logger.info("Closing stream for /api/sift/initiate for client: #{request.ip}")
@@ -472,7 +476,8 @@ post '/api/sift/chat' do
   rescue JSON::ParserError => e
     settings.logger.error "Invalid JSON format in request body: #{e.message}"
     settings.logger.debug "Problematic JSON string: #{params_json_string}" # Log the problematic string
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidJSONError', message: "Invalid JSON format in request body: #{e.message}" } }.to_json
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'InvalidJSONError', message: "Invalid JSON format in request body: #{e.message}" } }.to_json
   end
 
   # Parameter extraction
@@ -488,28 +493,31 @@ post '/api/sift/chat' do
   settings.logger.debug "PreprocessingOutputText present: #{!preprocessing_output_text.to_s.empty?}"
   settings.logger.debug "SystemInstructionOverride present: #{!system_instruction_override.to_s.empty?}"
 
-
   # Validation of required parameters
   if new_user_message_text.to_s.strip.empty?
-    settings.logger.warn "Validation failed: newUserMessageText is required."
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'newUserMessageText is required.' } }.to_json
+    settings.logger.warn 'Validation failed: newUserMessageText is required.'
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'MissingParameterError', message: 'newUserMessageText is required.' } }.to_json
   end
 
   if chat_history.nil? || !chat_history.is_a?(Array)
     settings.logger.warn "Validation failed: chatHistory is required and must be an array. Received: #{chat_history.class}"
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: 'chatHistory is required and must be an array.' } }.to_json
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'InvalidParameterError', message: 'chatHistory is required and must be an array.' } }.to_json
   end
 
   # Further validation for chat_history elements can be added here if needed, e.g., checking for role/content keys.
 
   if selected_model_id.to_s.strip.empty?
-    settings.logger.warn "Validation failed: selectedModelId is required."
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'selectedModelId is required.' } }.to_json
+    settings.logger.warn 'Validation failed: selectedModelId is required.'
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'MissingParameterError', message: 'selectedModelId is required.' } }.to_json
   end
 
   unless model_config_params.is_a?(Hash)
     settings.logger.warn "Validation failed: modelConfigParams, if provided, must be a JSON object (Hash). Received: #{model_config_params.class}"
-    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: 'modelConfigParams, if provided, must be a JSON object.' } }.to_json
+    halt 400, { 'Content-Type' => 'application/json' },
+         { error: { type: 'InvalidParameterError', message: 'modelConfigParams, if provided, must be a JSON object.' } }.to_json
   end
 
   content_type 'text/event-stream'
@@ -522,7 +530,7 @@ post '/api/sift/chat' do
         settings.logger.error "AIService is not defined. Ensure it's loaded."
         # This is a server configuration error, so we might not be able to send an SSE error gracefully.
         # However, we try.
-        error_data = { type: 'ServerError', message: "AIService is not available. Configuration issue." }.to_json
+        error_data = { type: 'ServerError', message: 'AIService is not available. Configuration issue.' }.to_json
         out << "event: error\ndata: #{error_data}\n\n" unless out.closed?
         next # or break, as the stream cannot proceed
       end
@@ -537,11 +545,11 @@ post '/api/sift/chat' do
         systemInstructionOverride: system_instruction_override
       ) do |content_or_event|
         if out.closed?
-          settings.logger.warn("SSE stream for /api/sift/chat closed by client.")
+          settings.logger.warn('SSE stream for /api/sift/chat closed by client.')
           break # Exit the loop if client disconnected
         end
 
-        if content_or_event.start_with?("event:")
+        if content_or_event.start_with?('event:')
           # This is an error event already formatted by AIService
           settings.logger.debug("Streaming pre-formatted event from AIService for /api/sift/chat: #{content_or_event.strip}")
           out << content_or_event
@@ -561,12 +569,11 @@ post '/api/sift/chat' do
       # Send a completion event to signal the end of the stream
       unless out.closed?
         out << "event: complete
-data: #{ { message: 'Chat stream finished' }.to_json }
+data: #{{ message: 'Chat stream finished' }.to_json}
 
 "
         settings.logger.info "Sent 'complete' event to client: #{request.ip}"
       end
-
     rescue StandardError => e
       settings.logger.error "Error during SSE streaming or AIService.continue_sift_chat execution: #{e.class.name} - #{e.message}"
       settings.logger.error e.backtrace.join("\n")
@@ -582,7 +589,7 @@ data: #{ { message: 'Chat stream finished' }.to_json }
   end
 end
 
-# Note: To test Sinatra::NotFound, simply try to access any undefined route,
+# NOTE: To test Sinatra::NotFound, simply try to access any undefined route,
 # for example: /api/this-route-does-not-exist
 
 # Placeholder for future API routes

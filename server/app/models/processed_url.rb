@@ -8,10 +8,10 @@ require_relative '../../config/database'
 class ProcessedUrl < Sequel::Model(:processed_urls)
   # Validations
   plugin :validation_helpers
-  
+
   def validate
     super
-    validates_presence [:url_hash, :original_url]
+    validates_presence %i[url_hash original_url]
     validates_unique :url_hash, message: 'URL has already been processed'
     validates_max_length 64, :url_hash
   end
@@ -26,7 +26,7 @@ class ProcessedUrl < Sequel::Model(:processed_urls)
   # Class methods
   def self.create_from_url(original_url:, extracted_title: nil, extracted_content: nil, embedding: nil)
     url_hash = generate_url_hash(original_url)
-    
+
     create(
       url_hash: url_hash,
       original_url: original_url,
@@ -73,16 +73,16 @@ class ProcessedUrl < Sequel::Model(:processed_urls)
 
   def content_preview(length = 200)
     return nil unless extracted_content
-    
+
     extracted_content.length > length ? "#{extracted_content[0...length]}..." : extracted_content
   end
 
   def similarity_to(other_embedding)
     return nil unless has_embedding? && other_embedding
-    
+
     # Calculate cosine similarity using pgvector operator
     # This would typically be done in a database query for efficiency
-    db.fetch('SELECT content_embedding <=> ? AS similarity FROM processed_urls WHERE id = ?', 
+    db.fetch('SELECT content_embedding <=> ? AS similarity FROM processed_urls WHERE id = ?',
              other_embedding, id).first[:similarity]
   end
 

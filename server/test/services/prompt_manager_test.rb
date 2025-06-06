@@ -19,34 +19,34 @@ class PromptManagerTest < Minitest::Test
   end
 
   def test_get_prompt_with_context_vars
-    context_vars = { user_query: "Test query", custom_var: "Custom value" }
+    context_vars = { user_query: 'Test query', custom_var: 'Custom value' }
     prompt = PromptManager.get_prompt(:sift_chat_system_prompt, context_vars)
-    
+
     # The prompt should include the current date (from default context)
     assert_includes prompt, Date.today.strftime('%Y-%m-%d')
-    
+
     # If the prompt template uses user_query, it should be substituted
     # Note: This depends on the actual template content
   end
 
   def test_get_prompt_with_user_input
-    user_input = "This is a test claim to analyze"
+    user_input = 'This is a test claim to analyze'
     prompt = PromptManager.get_prompt_with_user_input(
-      :sift_full_check_prompt, 
+      :sift_full_check_prompt,
       user_input: user_input
     )
-    
+
     refute_empty prompt
     assert_kind_of String, prompt
   end
 
   def test_default_context_vars_included
     context = PromptManager.default_context_vars
-    
+
     assert_includes context.keys, :current_date
     assert_includes context.keys, :current_time
     assert_includes context.keys, :application_name
-    
+
     assert_equal 'SIFT-Toolbox', context[:application_name]
     assert_match(/\d{4}-\d{2}-\d{2}/, context[:current_date])
   end
@@ -55,7 +55,7 @@ class PromptManagerTest < Minitest::Test
     prompts = PromptManager.available_prompts
     assert_kind_of Array, prompts
     refute_empty prompts
-    
+
     assert_includes prompts, :sift_chat_system_prompt
     assert_includes prompts, :sift_full_check_prompt
   end
@@ -71,12 +71,12 @@ class PromptManagerTest < Minitest::Test
 
   def test_get_prompt_config_returns_configuration
     config = PromptManager.get_prompt_config(:sift_chat_system_prompt)
-    
+
     assert_kind_of Hash, config
     assert_includes config.keys, :agent
     assert_includes config.keys, :behavior
     assert_includes config.keys, :key
-    
+
     assert_equal 'sift_full_check', config[:agent]
     assert_equal :interaction, config[:behavior]
     assert_equal :directive, config[:key]
@@ -91,10 +91,10 @@ class PromptManagerTest < Minitest::Test
   def test_erb_processing_with_special_variables
     # Test that ERB variables are properly processed
     context_vars = {
-      user_input: "Sample input with <special> characters",
-      user_query: "What about this query?"
+      user_input: 'Sample input with <special> characters',
+      user_query: 'What about this query?'
     }
-    
+
     # This should not raise an error even with special characters
     prompt = PromptManager.get_prompt(:sift_full_check_prompt, context_vars)
     refute_empty prompt
@@ -104,10 +104,10 @@ class PromptManagerTest < Minitest::Test
     # Test the get_prompt_with_user_input method with additional context
     prompt = PromptManager.get_prompt_with_user_input(
       :sift_chat_system_prompt,
-      user_input: "Test input",
-      custom_context: "Additional context"
+      user_input: 'Test input',
+      custom_context: 'Additional context'
     )
-    
+
     refute_empty prompt
     assert_kind_of String, prompt
   end
@@ -115,14 +115,14 @@ class PromptManagerTest < Minitest::Test
   def test_error_handling_for_missing_agent_config
     # This tests the error propagation from AgentManager
     # We'll simulate this by trying a prompt that should fail at the AgentManager level
-    
+
     # First, let's verify our error handling works with a completely invalid configuration
     invalid_mapping = { invalid_prompt: { agent: 'nonexistent_agent', behavior: :boot, key: :directive } }
-    
+
     # Temporarily modify the mapping to test error handling
     original_mapping = PromptManager.prompt_type_mapping
     PromptManager.const_set(:PROMPT_TYPE_MAPPING, invalid_mapping)
-    
+
     begin
       assert_raises(PromptManager::PromptNotFoundError) do
         PromptManager.get_prompt(:invalid_prompt)

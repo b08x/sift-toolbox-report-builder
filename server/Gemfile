@@ -1,18 +1,19 @@
 source 'https://rubygems.org'
 
-gem 'sinatra', '~> 3.0' # Or specify a more recent version if desired
-gem 'puma', '~> 6.0'    # Or specify a more recent version if desired
+gem 'dotenv', '~> 2.8', groups: %i[development test]
 gem 'json', '~> 2.6'
+gem 'pg', '~> 1.5' # Or a more recent version
+gem 'puma', '~> 6.0' # Or specify a more recent version if desired
+gem 'rake', '~> 13.0'
+gem 'ruby_llm'
+gem 'sequel', '~> 5.7' # Or a more recent version
+gem 'sinatra', '~> 3.0' # Or specify a more recent version if desired
 gem 'sinatra-cross_origin'
 gem 'tty-config', '~> 0.6'
-gem 'rake', '~> 13.0'
-gem 'sequel', '~> 5.7' # Or a more recent version
-gem 'pg', '~> 1.5'     # Or a more recent version
-gem 'dotenv', '~> 2.8', groups: [:development, :test]
-gem 'ruby_llm'
 
 group :development, :test do
-  gem 'rubocop', '~> 1.50', require: false # Or specify a more recent version
   gem 'minitest', '~> 5.0'
+  gem 'rack-test', '~> 2.1'
+  gem 'rubocop', '~> 1.50', require: false # Or specify a more recent version
   # gem 'rubocop-sinatra', '~> 1.4', require: false # Or specify a more recent version
 end

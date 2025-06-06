@@ -19,7 +19,7 @@ module PersistenceService
     # @return [SiftAnalysis] The created analysis record
     def create_sift_analysis(user_query_text:, report_type:, model_id_used:, user_image_filename: nil)
       return nil unless DB # Guard against missing database connection
-      
+
       begin
         analysis = SiftAnalysis.create_from_sift_request(
           user_query_text: user_query_text,
@@ -27,7 +27,7 @@ module PersistenceService
           model_id_used: model_id_used,
           user_image_filename: user_image_filename
         )
-        
+
         puts "PersistenceService: Created SIFT analysis with ID: #{analysis.id}"
         analysis
       rescue Sequel::ValidationFailed => e
@@ -45,18 +45,16 @@ module PersistenceService
     # @return [Boolean] True if successful
     def update_analysis_report(analysis_id:, generated_report_text:)
       return false unless DB
-      
+
       begin
         analysis = SiftAnalysis[analysis_id]
-        if analysis.nil?
-          raise AnalysisNotFoundError, "Analysis not found: #{analysis_id}"
-        end
-        
+        raise AnalysisNotFoundError, "Analysis not found: #{analysis_id}" if analysis.nil?
+
         analysis.update_report(generated_report_text)
         puts "PersistenceService: Updated analysis #{analysis_id} with report (#{generated_report_text.length} chars)"
         true
       rescue AnalysisNotFoundError
-        raise  # Re-raise as-is
+        raise # Re-raise as-is
       rescue Sequel::ValidationFailed => e
         raise PersistenceError, "Failed to update analysis report: #{e.message}"
       rescue StandardError => e
@@ -72,13 +70,13 @@ module PersistenceService
     # @return [ChatMessage] The created message record
     def save_user_message(analysis_id:, message_text:)
       return nil unless DB
-      
+
       begin
         message = ChatMessage.create_user_message(
           sift_analysis_id: analysis_id,
           message_text: message_text
         )
-        
+
         puts "PersistenceService: Saved user message for analysis #{analysis_id}"
         message
       rescue Sequel::ValidationFailed => e
@@ -98,7 +96,7 @@ module PersistenceService
     # @return [ChatMessage] The created message record
     def save_assistant_message(analysis_id:, message_text:, model_id_used:, grounding_sources: nil)
       return nil unless DB
-      
+
       begin
         message = ChatMessage.create_assistant_message(
           sift_analysis_id: analysis_id,
@@ -106,7 +104,7 @@ module PersistenceService
           model_id_used: model_id_used,
           grounding_sources: grounding_sources
         )
-        
+
         puts "PersistenceService: Saved assistant message for analysis #{analysis_id} (#{message_text.length} chars)"
         message
       rescue Sequel::ValidationFailed => e
@@ -126,11 +124,11 @@ module PersistenceService
     # @param user_image_filename [String, nil] Optional image filename
     # @param grounding_sources [Hash, nil] Optional sources
     # @return [Hash] Analysis and message IDs
-    def save_initial_sift_analysis(user_query_text:, report_type:, model_id_used:, 
-                                   generated_report_text:, user_image_filename: nil, 
+    def save_initial_sift_analysis(user_query_text:, report_type:, model_id_used:,
+                                   generated_report_text:, user_image_filename: nil,
                                    grounding_sources: nil)
       return nil unless DB
-      
+
       begin
         DB.transaction do
           # Create the analysis
@@ -162,7 +160,7 @@ module PersistenceService
           )
 
           puts "PersistenceService: Successfully saved complete SIFT analysis #{analysis.id}"
-          
+
           {
             analysis_id: analysis.id,
             user_message_id: user_message.id,
@@ -183,10 +181,10 @@ module PersistenceService
     # @param model_id_used [String] The AI model used
     # @param grounding_sources [Hash, nil] Optional sources
     # @return [Hash] Message IDs
-    def save_followup_conversation(analysis_id:, user_message_text:, ai_response_text:, 
+    def save_followup_conversation(analysis_id:, user_message_text:, ai_response_text:,
                                    model_id_used:, grounding_sources: nil)
       return nil unless DB
-      
+
       begin
         DB.transaction do
           # Save user's follow-up message
@@ -204,7 +202,7 @@ module PersistenceService
           )
 
           puts "PersistenceService: Saved follow-up conversation for analysis #{analysis_id}"
-          
+
           {
             user_message_id: user_message.id,
             ai_message_id: ai_message.id
@@ -222,11 +220,11 @@ module PersistenceService
     # @return [Hash, nil] Analysis data with messages
     def get_analysis_with_history(analysis_id)
       return nil unless DB
-      
+
       begin
         analysis = SiftAnalysis[analysis_id]
         return nil unless analysis
-        
+
         {
           analysis: analysis.summary,
           conversation_history: analysis.conversation_history
@@ -243,7 +241,7 @@ module PersistenceService
     # @return [Array<Hash>] Array of analysis summaries
     def get_recent_analyses(limit = 50)
       return [] unless DB
-      
+
       begin
         SiftAnalysis.recent(limit).map(&:summary)
       rescue StandardError => e

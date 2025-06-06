@@ -10,10 +10,10 @@ class ChatMessage < Sequel::Model(:chat_messages)
 
   # Validations
   plugin :validation_helpers
-  
+
   def validate
     super
-    validates_presence [:sift_analysis_id, :sender_type, :message_text]
+    validates_presence %i[sift_analysis_id sender_type message_text]
     validates_includes %w[user assistant system], :sender_type, message: 'must be user, assistant, or system'
     validates_max_length 50, :sender_type
     validates_max_length 255, :model_id_used if model_id_used
@@ -77,7 +77,7 @@ class ChatMessage < Sequel::Model(:chat_messages)
 
   def grounding_sources
     return nil unless has_grounding_sources?
-    
+
     # Handle both JSON string and JSONB types from PostgreSQL
     case grounding_sources_json
     when String
@@ -85,8 +85,6 @@ class ChatMessage < Sequel::Model(:chat_messages)
     when Hash, Sequel::Postgres::JSONBHash, Sequel::Postgres::JSONBObject
       # Convert JSONB objects to regular hash for consistency
       grounding_sources_json.to_hash
-    else
-      nil
     end
   rescue JSON::ParserError
     nil

@@ -13,7 +13,7 @@ class SiftAnalysis < Sequel::Model(:sift_analyses)
 
   # Validations
   plugin :validation_helpers
-  
+
   def validate
     super
     validates_presence [:report_type]

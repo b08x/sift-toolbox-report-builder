@@ -33,57 +33,55 @@ get '/stream-data' do
   # The block yields an `out` object, which is an instance of `Sinatra::Stream`.
   # You use `out << "some data"` to send data to the client.
   stream(:keep_open) do |out|
-    begin
-      # 3. Calling a Service that Yields Data
-      # The `MyStreamingService.perform_work` method is designed to `yield` data chunks.
-      # Each yielded chunk is a pre-formatted SSE message string.
-      MyStreamingService.perform_work do |data_chunk|
-        # Before writing to the stream, check if the client has disconnected.
-        # `out.closed?` returns true if the client has closed the connection.
-        # This prevents writing to a closed stream, which could raise an error.
-        if out.closed?
-          logger.info "Client disconnected, stopping stream."
-          break # Exit the loop/block if client is gone
-        end
-
-        out << data_chunk # Send the formatted SSE message to the client
-        logger.info "Sent chunk: #{data_chunk.strip}" # Log for debugging, strip newlines for conciseness
+    # 3. Calling a Service that Yields Data
+    # The `MyStreamingService.perform_work` method is designed to `yield` data chunks.
+    # Each yielded chunk is a pre-formatted SSE message string.
+    MyStreamingService.perform_work do |data_chunk|
+      # Before writing to the stream, check if the client has disconnected.
+      # `out.closed?` returns true if the client has closed the connection.
+      # This prevents writing to a closed stream, which could raise an error.
+      if out.closed?
+        logger.info 'Client disconnected, stopping stream.'
+        break # Exit the loop/block if client is gone
       end
-    rescue StandardError => e
-      # 4. Error Handling within the Stream
-      # If `MyStreamingService.perform_work` raises an exception (like our simulated error),
-      # this block catches it.
-      # It's important to:
-      #   a. Log the error on the server-side for diagnostics.
-      #   b. Inform the client about the error using a formatted SSE event.
-      logger.error "Streaming error in /stream-data: #{e.class} - #{e.message}"
-      logger.error e.backtrace.join("\n")
 
-      # Send a custom 'error' event to the client.
-      # The client-side JavaScript should have an event listener for 'error' events.
-      # The payload is typically JSON, providing structured error information.
-      error_payload = { type: 'STREAM_FAILURE', message: "A critical error occurred: #{e.message}" }.to_json
-
-      # Check if stream is still open before attempting to write the error.
-      out << "event: error\ndata: #{error_payload}\n\n" unless out.closed?
-    ensure
-      # 5. Closing the Stream
-      # - With `stream(:keep_open)`, Sinatra automatically closes the stream (`out.close`)
-      #   when the `stream` block finishes execution (i.e., when this `ensure` block is reached
-      #   after normal completion or after an error has been handled and not re-raised).
-      # - If you `break` out of a loop that's feeding the stream, or if the service
-      #   stops yielding data, the block will naturally end, and Sinatra handles closure.
-      # - Explicit `out.close` is generally not needed here unless you have specific logic
-      #   to terminate the stream prematurely from within the `begin` block but *not* due to an error
-      #   that would naturally lead to the block's end.
-      #
-      # Example: if you had `loop do ... if condition then out.close; break; end ... end`
-      #
-      # For this pattern, relying on Sinatra's automatic closure upon block completion is standard.
-      logger.info "SSE stream block for /stream-data finished for a client. Stream will be closed if not already."
-      # `out.close unless out.closed?` could be used if you need to be absolutely certain,
-      # but it's typically redundant when the block is exiting.
+      out << data_chunk # Send the formatted SSE message to the client
+      logger.info "Sent chunk: #{data_chunk.strip}" # Log for debugging, strip newlines for conciseness
     end
+  rescue StandardError => e
+    # 4. Error Handling within the Stream
+    # If `MyStreamingService.perform_work` raises an exception (like our simulated error),
+    # this block catches it.
+    # It's important to:
+    #   a. Log the error on the server-side for diagnostics.
+    #   b. Inform the client about the error using a formatted SSE event.
+    logger.error "Streaming error in /stream-data: #{e.class} - #{e.message}"
+    logger.error e.backtrace.join("\n")
+
+    # Send a custom 'error' event to the client.
+    # The client-side JavaScript should have an event listener for 'error' events.
+    # The payload is typically JSON, providing structured error information.
+    error_payload = { type: 'STREAM_FAILURE', message: "A critical error occurred: #{e.message}" }.to_json
+
+    # Check if stream is still open before attempting to write the error.
+    out << "event: error\ndata: #{error_payload}\n\n" unless out.closed?
+  ensure
+    # 5. Closing the Stream
+    # - With `stream(:keep_open)`, Sinatra automatically closes the stream (`out.close`)
+    #   when the `stream` block finishes execution (i.e., when this `ensure` block is reached
+    #   after normal completion or after an error has been handled and not re-raised).
+    # - If you `break` out of a loop that's feeding the stream, or if the service
+    #   stops yielding data, the block will naturally end, and Sinatra handles closure.
+    # - Explicit `out.close` is generally not needed here unless you have specific logic
+    #   to terminate the stream prematurely from within the `begin` block but *not* due to an error
+    #   that would naturally lead to the block's end.
+    #
+    # Example: if you had `loop do ... if condition then out.close; break; end ... end`
+    #
+    # For this pattern, relying on Sinatra's automatic closure upon block completion is standard.
+    logger.info 'SSE stream block for /stream-data finished for a client. Stream will be closed if not already.'
+    # `out.close unless out.closed?` could be used if you need to be absolutely certain,
+    # but it's typically redundant when the block is exiting.
   end
 end
 

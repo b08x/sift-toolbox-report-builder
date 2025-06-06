@@ -8,7 +8,7 @@ module AIServices
   class Gemini
     def initialize
       @api_key = Config.gemini_api_key
-      raise "Gemini API Key not configured!" unless @api_key
+      raise 'Gemini API Key not configured!' unless @api_key
     end
 
     def call_api(prompt)
@@ -26,7 +26,7 @@ module AIServices
   class OpenAI
     def initialize
       @api_key = Config.openai_api_key
-      raise "OpenAI API Key not configured!" unless @api_key
+      raise 'OpenAI API Key not configured!' unless @api_key
     end
 
     def call_api(prompt)
@@ -105,13 +105,13 @@ module AIServices
         )
       rescue AgentManager::AgentNotFoundError => e
         puts "Error: #{e.message}"
-        return "Failed to load agent configuration."
+        return 'Failed to load agent configuration.'
       rescue AgentManager::BehaviorNotFoundError => e
         puts "Error: #{e.message}"
-        return "Failed to find behavior in agent configuration."
+        return 'Failed to find behavior in agent configuration.'
       rescue AgentManager::ErbRenderingError => e
         puts "Error: #{e.message}"
-        return "Failed to render directive template."
+        return 'Failed to render directive template.'
       end
 
       puts "Agent '#{@agent_name}' using directive: \n#{directive}"

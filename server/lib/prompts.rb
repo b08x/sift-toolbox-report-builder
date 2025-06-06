@@ -2,8 +2,8 @@
 
 module Prompts
   PROMPT_TEMPLATES = {
-    sift_chat_system_prompt: "You are a helpful assistant for the SIFT application. Be concise and helpful.",
-    sift_full_check_prompt: "Perform a full check on the following input: %{user_input}",
+    sift_chat_system_prompt: 'You are a helpful assistant for the SIFT application. Be concise and helpful.',
+    sift_full_check_prompt: 'Perform a full check on the following input: %<user_input>s'
     # Add other report types here as needed
     # e.g., sift_summary_prompt: "Summarize this: %{user_input}"
   }.freeze

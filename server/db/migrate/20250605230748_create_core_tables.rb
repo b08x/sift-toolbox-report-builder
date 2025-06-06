@@ -43,9 +43,9 @@ Sequel.migration do
   end
 
   down do
-    DB.run %{ DROP TABLE IF EXISTS processed_urls; }
-    DB.run %{ DROP TABLE IF EXISTS chat_messages; }
-    DB.run %{ DROP TABLE IF EXISTS sift_analyses; }
+    DB.run %( DROP TABLE IF EXISTS processed_urls; )
+    DB.run %( DROP TABLE IF EXISTS chat_messages; )
+    DB.run %( DROP TABLE IF EXISTS sift_analyses; )
     # If you had enabled any extensions like "uuid-ossp" specifically in the up method
     # and not in init.sql, you might consider dropping them here,
     # but typically extensions are managed at a database level, not per-migration.

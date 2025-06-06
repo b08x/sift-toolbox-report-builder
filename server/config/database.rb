@@ -17,11 +17,11 @@ DATABASE_URL = ENV.fetch('DATABASE_URL', "postgres://#{db_user}:#{db_password}@#
 # The global constant DB is a common practice in Sequel apps
 begin
   DB = Sequel.connect(DATABASE_URL)
-  
+
   # Load Sequel extensions for PostgreSQL specific types
   DB.extension :pg_json
   DB.extension :pg_hstore
-  
+
   # Test connection
   DB.test_connection
   puts "Successfully connected to database: #{db_name} on #{db_host}:#{db_port}"

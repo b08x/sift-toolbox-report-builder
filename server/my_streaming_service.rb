@@ -30,29 +30,29 @@ class MyStreamingService
     sleep 1 # Simulate work
 
     # Sending JSON data: It's common to send structured data as JSON.
-    yield "data: #{ { progress: 25, message: "Gathering initial data..." }.to_json }\n\n"
+    yield "data: #{{ progress: 25, message: 'Gathering initial data...' }.to_json}\n\n"
     sleep 1
 
     # Simulate a potential error. In a real application, this could be an external API call failing.
-    if rand(4) == 0 # ~25% chance
-      raise "Simulated critical error during streaming!"
-    end
+    raise 'Simulated critical error during streaming!' if rand(4) == 0 # ~25% chance
 
     # Named event 'update' with JSON data
-    yield "event: update\ndata: #{ { progress: 50, status: "Processing dependencies", details: "Halfway there!" }.to_json }\n\n"
+    yield "event: update\ndata: #{{ progress: 50, status: 'Processing dependencies',
+                                    details: 'Halfway there!' }.to_json}\n\n"
     sleep 1
 
     if rand(3) == 0 # ~33% chance
       # Example of a custom 'warning' event, could be used for non-critical issues.
-      yield "event: warning\ndata: #{ { code: 'TEMP_HIGH', message: 'Temperature threshold exceeded slightly.'}.to_json }\n\n"
+      yield "event: warning\ndata: #{{ code: 'TEMP_HIGH',
+                                       message: 'Temperature threshold exceeded slightly.' }.to_json}\n\n"
       sleep 0.5
     end
 
-    yield "data: #{ { progress: 75, message: "Finalizing process..." }.to_json }\n\n"
+    yield "data: #{{ progress: 75, message: 'Finalizing process...' }.to_json}\n\n"
     sleep 1
 
     # Named event 'complete' indicating the end of the process.
-    yield "event: complete\ndata: #{ { message: "Work finished successfully at #{Time.now}" }.to_json }\n\n"
+    yield "event: complete\ndata: #{{ message: "Work finished successfully at #{Time.now}" }.to_json}\n\n"
     # After this, the block in sinatra_app.rb will finish, and Sinatra will close the stream.
   end
 end

@@ -8,7 +8,7 @@ module AgentManager
   class ErbRenderingError < StandardError; end
 
   def self.config_path
-    File.expand_path('../../../config/agents', __FILE__)
+    File.expand_path('../../config/agents', __dir__)
   end
 
   def self.load_agent_config(agent_name)
@@ -25,8 +25,9 @@ module AgentManager
   def self.get_processed_behavior(agent_name:, behavior_key: :interaction, context_vars: {})
     config = load_agent_config(agent_name)
     # Fetch the 'behaviors' block first, then the specific behavior from it.
-    behaviors_block = config.fetch("behaviors")
+    behaviors_block = config.fetch('behaviors')
     raise BehaviorNotFoundError, "Top-level 'behaviors' key not found for agent '#{agent_name}'" if behaviors_block.nil?
+
     raw_behavior = behaviors_block.fetch(behavior_key.to_s)
 
     raise BehaviorNotFoundError, "Behavior '#{behavior_key}' not found for agent '#{agent_name}'" if raw_behavior.nil?
@@ -45,7 +46,6 @@ module AgentManager
       end
     end
     processed_behavior
-
   rescue KeyError => e # Standard Ruby error for Hash#fetch when key not found
     raise BehaviorNotFoundError, "Missing key in agent configuration: #{e.message}"
   end

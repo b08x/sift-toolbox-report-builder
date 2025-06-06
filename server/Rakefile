@@ -7,36 +7,36 @@ require_relative 'config/database' # Load database connection
 Sequel.extension :migration
 
 namespace :db do
-  desc "Run database migrations"
-  task :migrate, [:version] do |t, args|
+  desc 'Run database migrations'
+  task :migrate, [:version] do |_t, args|
     migrations_dir = File.join(__dir__, 'db', 'migrate')
     target_version = args[:version] ? args[:version].to_i : nil
 
-    if !Dir.exist?(migrations_dir)
+    unless Dir.exist?(migrations_dir)
       puts "Migrations directory not found: #{migrations_dir}"
       next
     end
 
-    puts "Running migrations..."
+    puts 'Running migrations...'
     if target_version
       puts "Migrating to version #{target_version}"
       Sequel::Migrator.run(DB, migrations_dir, target: target_version)
     else
-      puts "Migrating to latest"
+      puts 'Migrating to latest'
       Sequel::Migrator.run(DB, migrations_dir)
     end
-    puts "Migrations complete."
+    puts 'Migrations complete.'
 
     # Automatically update schema.rb after migration (optional but good practice)
     # Rake::Task['db:schema:dump'].invoke if Rake::Task.task_defined?('db:schema:dump')
   end
 
-  desc "Rollback database migrations"
-  task :rollback, [:steps] do |t, args|
+  desc 'Rollback database migrations'
+  task :rollback, [:steps] do |_t, args|
     migrations_dir = File.join(__dir__, 'db', 'migrate')
     steps = args[:steps] ? args[:steps].to_i : 1 # Default to 1 step back
 
-    if !Dir.exist?(migrations_dir)
+    unless Dir.exist?(migrations_dir)
       puts "Migrations directory not found: #{migrations_dir}"
       next
     end
@@ -46,32 +46,32 @@ namespace :db do
     target_version = current_version - steps
 
     if target_version < 0
-        # If rolling back further than the first migration, it migrates down to nothing (version 0)
-        puts "Target version is less than 0. This will revert all migrations."
-        Sequel::Migrator.run(DB, migrations_dir, target: 0)
+      # If rolling back further than the first migration, it migrates down to nothing (version 0)
+      puts 'Target version is less than 0. This will revert all migrations.'
+      Sequel::Migrator.run(DB, migrations_dir, target: 0)
     else
-        Sequel::Migrator.run(DB, migrations_dir, target: target_version)
+      Sequel::Migrator.run(DB, migrations_dir, target: target_version)
     end
     puts "Rollback complete. Current version is now: #{Sequel::Migrator.get_current_migration_version(DB)}"
   end
 
-  desc "Check migration status"
+  desc 'Check migration status'
   task :status do
     migrations_dir = File.join(__dir__, 'db', 'migrate')
 
-    if !Dir.exist?(migrations_dir)
+    unless Dir.exist?(migrations_dir)
       puts "Migrations directory not found: #{migrations_dir}"
       next
     end
 
     migrator = Sequel::TimestampMigrator.new(DB, migrations_dir, {}) # or IntegerMigrator if using integers
 
-    puts "Migration Status:"
-    puts "-----------------"
+    puts 'Migration Status:'
+    puts '-----------------'
     if migrator.is_current?
-      puts "Database is up to date."
+      puts 'Database is up to date.'
     else
-      puts "Database is NOT up to date."
+      puts 'Database is NOT up to date.'
       # You could add more detailed status here, e.g., pending migrations.
       # This requires more complex logic to list files and compare with schema_migrations table.
     end

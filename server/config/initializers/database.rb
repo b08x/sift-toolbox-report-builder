@@ -1,4 +1,3 @@
-
 # Database initializer - loads database configuration
 require_relative '../database'
 
