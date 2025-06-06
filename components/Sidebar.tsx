@@ -13,8 +13,8 @@ interface SidebarProps {
   onModelConfigParamChange: (key: string, value: number | string) => void;
   onClearChatAndReset: () => void;
   isChatActive: boolean;
-  enableGeminiPreprocessing: boolean; // New prop
-  onToggleGeminiPreprocessing: (enabled: boolean) => void; // New prop
+  // enableGeminiPreprocessing: boolean; // Prop removed
+  // onToggleGeminiPreprocessing: (enabled: boolean) => void; // Prop removed
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -27,8 +27,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onModelConfigParamChange,
   onClearChatAndReset,
   isChatActive,
-  enableGeminiPreprocessing,
-  onToggleGeminiPreprocessing,
+  // enableGeminiPreprocessing, // Prop removed
+  // onToggleGeminiPreprocessing, // Prop removed
 }) => {
   const handleProviderChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newProviderKey = event.target.value as AIProvider;
@@ -98,32 +98,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <option value="" disabled>No models for this provider</option>
             )}
           </select>
-        </div>
-
-        {/* Gemini Preprocessing Toggle for OpenRouter */}
-        {selectedProviderKey === AIProvider.OPENROUTER && (
-          <div className="pt-3 border-t border-slate-700/50">
-            <label htmlFor="geminiPreprocessingToggle" className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                id="geminiPreprocessingToggle"
-                checked={enableGeminiPreprocessing}
-                onChange={(e) => onToggleGeminiPreprocessing(e.target.checked)}
-                disabled={isChatActive}
-                className="h-4 w-4 rounded border-slate-500 text-sky-500 focus:ring-sky-400 accent-sky-500 disabled:opacity-50"
-              />
-              <span className="text-sm font-medium text-indigo-300">Gemini Preprocessing</span>
-            </label>
-            <p className="text-xs text-slate-500 italic mt-1">
-              Use Gemini for initial SIFT & grounding, then send its output to OpenRouter.
-              Requires both Google Gemini & OpenRouter API keys. Changing this clears chat.
-            </p>
-          </div>
-        )}
-
-
-        {/* Dynamic Model Parameters */}
-        {selectedModelConfig && selectedModelConfig.parameters.length > 0 && (
+                </div>
+        
+                {/* Gemini Preprocessing Toggle for OpenRouter - Removed as this is now backend-driven */}
+                {/* The UI for this toggle might be re-introduced if the backend provides a way to control this behavior per-request */}
+        
+        
+                {/* Dynamic Model Parameters */}
+                {selectedModelConfig && selectedModelConfig.parameters.length > 0 && (
           <div className="pt-3 border-t border-slate-700/50">
             <h3 className="text-sm font-medium text-indigo-300 mb-2">
               Parameters ({selectedModelConfig.name})
