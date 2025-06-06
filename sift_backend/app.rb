@@ -3,8 +3,10 @@ require 'logger'
 require 'json'
 require 'sinatra/cross_origin'
 require 'dotenv/load' # Loads environment variables from .env
+require 'securerandom' # For generating unique IDs
 require_relative 'config/database' # Load database configuration
 require_relative 'services/sift_service'
+require_relative 'services/ai_service' # For AIService.continue_sift_chat
 
 class MyCustomError < StandardError; end
 
@@ -253,6 +255,105 @@ post '/api/sift/initiate' do
       # Sinatra's stream(:keep_open) handles closing the stream when the block exits.
     end
     settings.logger.info "SSE stream block finished for client: #{request.ip}"
+  end
+end
+
+post '/api/sift/chat' do
+  settings.logger.info "POST /api/sift/chat - Received request from #{request.ip}"
+  params_json_string = nil
+  begin
+    request.body.rewind
+    params_json_string = request.body.read
+    settings.logger.debug "Raw JSON payload: #{params_json_string}"
+    params = JSON.parse(params_json_string)
+  rescue JSON::ParserError => e
+    settings.logger.error "Invalid JSON format in request body: #{e.message}"
+    settings.logger.debug "Problematic JSON string: #{params_json_string}" # Log the problematic string
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidJSONError', message: "Invalid JSON format in request body: #{e.message}" } }.to_json
+  end
+
+  # Parameter extraction
+  new_user_message_text = params['newUserMessageText']
+  chat_history = params['chatHistory'] # Expecting Array of Hashes
+  selected_model_id = params['selectedModelId']
+  model_config_params = params['modelConfigParams'] || {} # Default to empty hash
+  preprocessing_output_text = params['preprocessingOutputText'] # Optional
+  system_instruction_override = params['systemInstructionOverride'] # Optional
+
+  settings.logger.info "Extracted params: newUserMessageText present: #{!new_user_message_text.to_s.empty?}, chatHistory items: #{chat_history.is_a?(Array) ? chat_history.length : 'N/A'}, selectedModelId: #{selected_model_id}"
+  settings.logger.debug "ModelConfigParams: #{model_config_params.inspect}"
+  settings.logger.debug "PreprocessingOutputText present: #{!preprocessing_output_text.to_s.empty?}"
+  settings.logger.debug "SystemInstructionOverride present: #{!system_instruction_override.to_s.empty?}"
+
+
+  # Validation of required parameters
+  if new_user_message_text.to_s.strip.empty?
+    settings.logger.warn "Validation failed: newUserMessageText is required."
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'newUserMessageText is required.' } }.to_json
+  end
+
+  if chat_history.nil? || !chat_history.is_a?(Array)
+    settings.logger.warn "Validation failed: chatHistory is required and must be an array. Received: #{chat_history.class}"
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: 'chatHistory is required and must be an array.' } }.to_json
+  end
+
+  # Further validation for chat_history elements can be added here if needed, e.g., checking for role/content keys.
+
+  if selected_model_id.to_s.strip.empty?
+    settings.logger.warn "Validation failed: selectedModelId is required."
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'MissingParameterError', message: 'selectedModelId is required.' } }.to_json
+  end
+
+  unless model_config_params.is_a?(Hash)
+    settings.logger.warn "Validation failed: modelConfigParams, if provided, must be a JSON object (Hash). Received: #{model_config_params.class}"
+    halt 400, { 'Content-Type' => 'application/json' }, { error: { type: 'InvalidParameterError', message: 'modelConfigParams, if provided, must be a JSON object.' } }.to_json
+  end
+
+  content_type 'text/event-stream'
+  stream(:keep_open) do |out|
+    settings.logger.info "SSE stream opened for /api/sift/chat. Client: #{request.ip}"
+    begin
+      # Ensure AIService is available. If it's in a different module/file, it needs to be required.
+      # Assuming AIService is loaded, similar to SiftService.
+      unless defined?(AIService)
+        settings.logger.error "AIService is not defined. Ensure it's loaded."
+        # This is a server configuration error, so we might not be able to send an SSE error gracefully.
+        # However, we try.
+        error_data = { type: 'ServerError', message: "AIService is not available. Configuration issue." }.to_json
+        out << "event: error\ndata: #{error_data}\n\n" unless out.closed?
+        next # or break, as the stream cannot proceed
+      end
+
+      AIService.continue_sift_chat(
+        chat_session_id: request.env['HTTP_X_REQUEST_ID'] || SecureRandom.uuid, # Example session ID
+        newUserMessageText: new_user_message_text,
+        chatHistory: chat_history,
+        selectedModelId: selected_model_id,
+        modelConfigParams: model_config_params,
+        preprocessingOutputText: preprocessing_output_text,
+        systemInstructionOverride: system_instruction_override
+      ) do |chunk|
+        if out.closed?
+          settings.logger.warn "SSE stream for /api/sift/chat closed by client, cannot send chunk: #{chunk.strip}"
+          break
+        end
+        settings.logger.debug "Streaming chunk for /api/sift/chat: #{chunk.strip}"
+        out << chunk
+      end
+      settings.logger.info "AIService.continue_sift_chat stream completed for client: #{request.ip}"
+
+    rescue StandardError => e
+      settings.logger.error "Error during SSE streaming or AIService.continue_sift_chat execution: #{e.class.name} - #{e.message}"
+      settings.logger.error e.backtrace.join("\n")
+      unless out.closed?
+        error_data = { type: 'StreamingError', message: "An error occurred: #{e.message}" }.to_json
+        out << "event: error\ndata: #{error_data}\n\n"
+      end
+    ensure
+      settings.logger.info "SSE stream ensure block reached for /api/sift/chat. Closing stream for client: #{request.ip}"
+      # Sinatra's stream(:keep_open) handles closing the stream when the block exits.
+    end
+    settings.logger.info "SSE stream block finished for /api/sift/chat for client: #{request.ip}"
   end
 end
 
