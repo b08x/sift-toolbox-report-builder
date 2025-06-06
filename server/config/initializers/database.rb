@@ -1,3 +1,5 @@
+
+require_relative 'config/database'
 # sift_backend/config/database.rb
 require 'sequel'
 require 'logger' # Optional: for logging SQL queries
