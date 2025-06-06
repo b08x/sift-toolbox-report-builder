@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Chat, GenerateContentResponse, Part } from "@google/genai"; // Removed APIError
+import { GoogleGenAI, Chat, Part } from "@google/genai"; // Removed APIError, GenerateContentResponse
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 import ReactMarkdown from 'react-markdown';
@@ -30,8 +30,10 @@ import {
   SIFT_CHAT_SYSTEM_PROMPT
 } from './prompts';
 import { AVAILABLE_PROVIDERS_MODELS } from './models.config';
+import { initiateSiftAnalysis } from './services/apiClient';
 
 const App: React.FC = () => {
+  const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const [userInputText, setUserInputText] = useState<string>('');
   const [userImageFile, setUserImageFile] = useState<File | null>(null);
   const [reportType, setReportType] = useState<ReportType>(ReportType.FULL_CHECK);
@@ -66,7 +68,8 @@ const App: React.FC = () => {
 
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  // const abortControllerRef = useRef<AbortController | null>(null); // Will be removed or managed by SSE handler
+  const abortControllerRef = useRef<AbortController | null>(null); // Keeping for handleStopGeneration, but not used in handleStartChat's core API call path
 
   // Initialize API keys and clients
   useEffect(() => {
@@ -234,288 +237,157 @@ const App: React.FC = () => {
     };
   };
 
-  const constructFullPrompt = (text: string, type: ReportType): string => {
-    const currentDate = new Date().toLocaleDateString('en-US', {
-      year: 'numeric', month: 'long', day: 'numeric'
-    });
-    let basePrompt = '';
-    switch (type) {
-      case ReportType.FULL_CHECK:
-        basePrompt = SIFT_FULL_CHECK_PROMPT;
-        break;
-      case ReportType.CONTEXT_REPORT:
-        basePrompt = SIFT_CONTEXT_REPORT_PROMPT;
-        break;
-      case ReportType.COMMUNITY_NOTE:
-        basePrompt = SIFT_COMMUNITY_NOTE_PROMPT;
-        break;
-      default:
-        basePrompt = SIFT_FULL_CHECK_PROMPT;
-    }
-    return `${basePrompt.replace(/\[current date placeholder, will be provided in task\]|\[current date\]/gi, currentDate)}\n\nUser's initial query: "${text}"`;
-  };
+  // const fileToGenerativePart = async (file: File): Promise<Part> => {
+  //   const base64EncodedData = await new Promise<string>((resolve) => {
+  //     const reader = new FileReader();
+  //     reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+  //     reader.readAsDataURL(file);
+  //   });
+  //   return {
+  //     inlineData: {
+  //       mimeType: file.type,
+  //       data: base64EncodedData,
+  //     },
+  //   };
+  // };
+
+  // const constructFullPrompt = (text: string, type: ReportType): string => {
+  //   const currentDate = new Date().toLocaleDateString('en-US', {
+  //     year: 'numeric', month: 'long', day: 'numeric'
+  //   });
+  //   let basePrompt = '';
+  //   switch (type) {
+  //     case ReportType.FULL_CHECK:
+  //       basePrompt = SIFT_FULL_CHECK_PROMPT;
+  //       break;
+  //     case ReportType.CONTEXT_REPORT:
+  //       basePrompt = SIFT_CONTEXT_REPORT_PROMPT;
+  //       break;
+  //     case ReportType.COMMUNITY_NOTE:
+  //       basePrompt = SIFT_COMMUNITY_NOTE_PROMPT;
+  //       break;
+  //     default:
+  //       basePrompt = SIFT_FULL_CHECK_PROMPT;
+  //   }
+  //   return `${basePrompt.replace(/\[current date placeholder, will be provided in task\]|\[current date\]/gi, currentDate)}\n\nUser's initial query: "${text}"`;
+  // };
 
   const handleStartChat = async (isRestart: boolean = false, restartQuery?: OriginalQueryInfo) => {
-    setError(null);
     setIsLoading(true);
-    setGeminiPreprocessingOutputText(null); // Clear previous output
-    
-    const currentModelConfig = getSelectedModelConfig();
-    if (!currentModelConfig) {
-      setError("Selected model configuration is not available.");
-      setIsLoading(false);
-      return;
-    }
-  
+    setError(null);
+    // Clear previous pre-processing output if any, as a new SIFT analysis will start.
+    setGeminiPreprocessingOutputText(null);
+
+    // Determine the query details to use, prioritizing restartQuery if provided.
     const queryToUse = isRestart && restartQuery ? restartQuery : {
       text: userInputText,
+      // For a new chat, image details are derived from userImageFile.
+      // For a restart, they should be in restartQuery if an image was part of the original query.
       imageMimeType: userImageFile?.type,
-      imageBase64: userImageFile ? await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-        reader.readAsDataURL(userImageFile);
-      }) : null,
+      // imageBase64 is not directly prepared here for new chats; userImageFile is preferred.
+      // If restarting, restartQuery.imageBase64 should be used if present.
+      imageBase64: (isRestart && restartQuery?.imageBase64) ? restartQuery.imageBase64 : null,
       reportType: reportType,
-      userImagePreviewUrl: userImageFile ? URL.createObjectURL(userImageFile) : undefined,
+      userImagePreviewUrl: userImageFile ? URL.createObjectURL(userImageFile) : (isRestart && restartQuery?.userImagePreviewUrl ? restartQuery.userImagePreviewUrl : undefined),
     };
 
-    if (!queryToUse.text?.trim() && !queryToUse.imageBase64) {
+    // Validate that there's content to analyze.
+    if (!queryToUse.text?.trim() && !userImageFile && !queryToUse.imageBase64) {
       setError("Please provide text or an image to analyze.");
       setIsLoading(false);
       return;
     }
 
+    // Create and set the user's message in the chat.
     const userMessageId = uuidv4();
-    const userMessageText = queryToUse.text || (queryToUse.imageBase64 ? "Image for analysis:" : "Empty query (should not happen)");
+    const userMessageText = queryToUse.text || (userImageFile || queryToUse.userImagePreviewUrl || queryToUse.imageBase64 ? "Image for analysis:" : "Empty query");
     
     const userDisplayMessage: ChatMessage = {
       id: userMessageId,
       sender: 'user',
       text: userMessageText,
       timestamp: new Date(),
-      imagePreviewUrl: queryToUse.userImagePreviewUrl,
-      originalQuery: { // Store original query details with the user message
+      imagePreviewUrl: queryToUse.userImagePreviewUrl, // This might be undefined if restarting with only base64
+      originalQuery: { // Store all relevant details of the query that initiated this SIFT analysis
+        text: queryToUse.text,
+        imageMimeType: queryToUse.imageMimeType,
+        imageBase64: queryToUse.imageBase64, // Important for restarts if no File object is available
+        reportType: queryToUse.reportType,
+        userImagePreviewUrl: queryToUse.userImagePreviewUrl,
+      }
+    };
+    setChatMessages([userDisplayMessage]); // Initialize chat with the user's message.
+
+    // Update application state to reflect active chat and current query details.
+    setIsChatActive(true);
+    setCurrentSiftQueryDetails({
+      userInputText: queryToUse.text || '',
+      userImagePreviewUrl: queryToUse.userImagePreviewUrl, // May be undefined
+      reportType: queryToUse.reportType,
+    });
+
+    // Save the complete query information for a potential restart.
+    // This ensures that even if `userImageFile` is cleared, `imageBase64` is retained for restart if it was part of the query.
+    setOriginalQueryForRestart({
         text: queryToUse.text,
         imageMimeType: queryToUse.imageMimeType,
         imageBase64: queryToUse.imageBase64,
         reportType: queryToUse.reportType,
-        userImagePreviewUrl: queryToUse.userImagePreviewUrl
-      }
-    };
-    setChatMessages([userDisplayMessage]);
-    setIsChatActive(true);
-    setCurrentSiftQueryDetails({
-      userInputText: queryToUse.text || '',
-      userImagePreviewUrl: queryToUse.userImagePreviewUrl,
-      reportType: queryToUse.reportType,
+        userImagePreviewUrl: queryToUse.userImagePreviewUrl,
     });
-    setOriginalQueryForRestart(queryToUse); // Save for potential restart
 
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    let currentProviderForMainExecution = selectedProviderKey;
-    let mainExecutionModelId = selectedModelId;
-    let mainExecutionPrompt = constructFullPrompt(queryToUse.text || (queryToUse.imageMimeType ? `Input is an image of type ${queryToUse.imageMimeType}. Please describe and analyze it based on the ${queryToUse.reportType} SIFT guidelines.` : ''), queryToUse.reportType);
-    let mainExecutionImagePart: Part | null = null;
-    if (queryToUse.imageBase64 && queryToUse.imageMimeType && currentModelConfig.supportsVision) {
-        mainExecutionImagePart = { inlineData: { data: queryToUse.imageBase64, mimeType: queryToUse.imageMimeType } };
-    }
-    let openAIHistoryForMainExecution: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-
-
-    // ---- Gemini Preprocessing Step (if enabled for OpenRouter) ----
-    if (selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing) {
-        if (!geminiAi) {
-            setError("Google Gemini API Key is required for preprocessing but not available. Please ensure 'import.meta.env.VITE_API_KEY' is set.");
-            setIsLoading(false);
-            setChatMessages(prev => [...prev, {id: uuidv4(), sender: 'ai', text: "Error: Gemini API key (VITE_API_KEY) missing for preprocessing.", timestamp: new Date(), isError: true}]);
-            return;
-        }
-        if (!openrouterApiKey && selectedProviderKey === AIProvider.OPENROUTER) {
-             setError("OpenRouter API Key is required but not available. Please ensure 'import.meta.env.VITE_OPENROUTER_API_KEY' is set.");
-             setIsLoading(false);
-             setChatMessages(prev => [...prev, {id: uuidv4(), sender: 'ai', text: "Error: OpenRouter API key (VITE_OPENROUTER_API_KEY) missing.", timestamp: new Date(), isError: true}]);
-             return;
-        }
-
-
-        const geminiPreprocessingModelId = 'gemini-2.5-flash-preview-05-20'; // Or make configurable
-        const geminiAiMessageId = uuidv4();
-        setChatMessages(prev => [...prev, { id: geminiAiMessageId, sender: 'ai', text: '', isLoading: true, timestamp: new Date(), modelId: geminiPreprocessingModelId, isInitialSIFTReport: true, originalQueryReportType: queryToUse.reportType }]);
-
-        try {
-            const geminiPromptParts: Part[] = [];
-            const geminiSystemInstruction = getSystemPromptForSelectedModel(); // Use general SIFT prompt
-            const geminiFullPromptForSift = constructFullPrompt(queryToUse.text || (queryToUse.imageMimeType ? `Input is an image of type ${queryToUse.imageMimeType}. Please describe and analyze it based on the ${queryToUse.reportType} SIFT guidelines.` : ''), queryToUse.reportType);
-            geminiPromptParts.push({text: geminiFullPromptForSift});
-
-            if (queryToUse.imageBase64 && queryToUse.imageMimeType) { // Assuming Gemini Flash supports vision
-                geminiPromptParts.push({ inlineData: { data: queryToUse.imageBase64, mimeType: queryToUse.imageMimeType } });
-            }
-            
-            const geminiConfig = {
-                tools: [{ googleSearch: {} }], // Enable Google Search for Gemini step
-                systemInstruction: geminiSystemInstruction, // Use system prompt
-                temperature: 0.5, // Fixed reasonable temp for preprocessing
-            };
-
-            const stream = await geminiAi.models.generateContentStream({
-                model: geminiPreprocessingModelId,
-                contents: { role: "user", parts: geminiPromptParts },
-                config: geminiConfig,
-            });
-
-            let accumulatedGeminiText = '';
-            let currentGroundingChunks: GroundingChunk[] = [];
-
-            for await (const chunk of stream) {
-                if (signal.aborted) {
-                  setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText + "\n\nGeneration stopped by user.", isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
-                  setIsLoading(false);
-                  return;
-                }
-                const chunkText = chunk.text;
-                accumulatedGeminiText += chunkText;
-                if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-                    currentGroundingChunks = chunk.candidates[0].groundingMetadata.groundingChunks.map((gc: any) => ({ web: gc.web }));
-                }
-                setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: true, groundingSources: currentGroundingChunks } : m));
-            }
-            setGeminiPreprocessingOutputText(accumulatedGeminiText); // Save for next step
-            setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: accumulatedGeminiText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
-            
-            // Prepare for OpenRouter step
-            currentProviderForMainExecution = AIProvider.OPENROUTER; // Already set, but for clarity
-            mainExecutionModelId = selectedModelId; // Use the user-selected OpenRouter model
-            mainExecutionPrompt = `The following is a SIFT analysis report generated by a previous AI (Gemini) based on the user's original query. Your task is to critically review, summarize, or provide additional insights on this report as a SIFT expert. \n\nUser's Original Query: "${queryToUse.text || 'Image was provided'}" (Report Type: ${queryToUse.reportType})\n\n---BEGIN GEMINI SIFT REPORT---\n${accumulatedGeminiText}\n---END GEMINI SIFT REPORT---\n\nPlease provide your analysis of the Gemini report:`;
-            mainExecutionImagePart = null; // Image was processed by Gemini
-            openAIHistoryForMainExecution = [
-                { role: 'system', content: getSystemPromptForSelectedModel() }, // OpenRouter system prompt
-                { role: 'user', content: mainExecutionPrompt }
-            ];
-
-        } catch (e) {
-            console.error("Gemini preprocessing API call failed:", e);
-            const errorText = `Gemini preprocessing failed: ${e instanceof Error ? e.message : String(e)}`;
-            setChatMessages(prev => prev.map(m => m.id === geminiAiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m));
-            setError(errorText);
-            setIsLoading(false);
-            return;
-        }
-    }
-    // ---- End Gemini Preprocessing Step ----
-
-
-    // ---- Main Execution Step (Gemini, OpenAI, or OpenRouter after preprocessing) ----
+    // Add a placeholder message for the AI's response.
     const aiMessageId = uuidv4();
-    setChatMessages(prev => [...prev, { id: aiMessageId, sender: 'ai', text: '', isLoading: true, timestamp: new Date(), modelId: mainExecutionModelId, isInitialSIFTReport: !(selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing), originalQueryReportType: queryToUse.reportType }]);
-    
-    try {
-      if (currentProviderForMainExecution === AIProvider.GOOGLE_GEMINI) {
-        if (!geminiAi) {
-          setError("Google Gemini API Key is not available or empty. Please ensure 'import.meta.env.VITE_API_KEY' is set.");
-          setIsLoading(false);
-          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: "Error: Gemini API key (VITE_API_KEY) missing.", isLoading: false, isError: true } : m));
-          return;
-        }
-        
-        const systemInstruction = getSystemPromptForSelectedModel();
-        const geminiChat = geminiAi.chats.create({
-          model: mainExecutionModelId,
-          config: {
-            ...modelConfigParams,
-            tools: currentModelConfig?.supportsGoogleSearch ? [{ googleSearch: {} }] : undefined,
-            systemInstruction: systemInstruction,
-          },
-          history: [], // Start fresh for initial SIFT report
-        });
-        setCurrentChat(geminiChat);
-        
-        const promptPartsForChat: Part[] = [{text: mainExecutionPrompt}];
-        if (mainExecutionImagePart && currentModelConfig.supportsVision) {
-            promptPartsForChat.push(mainExecutionImagePart);
-        }
-
-        const stream = await geminiChat.sendMessageStream({ message: promptPartsForChat });
-        let accumulatedText = '';
-        let currentGroundingChunks: GroundingChunk[] = [];
-
-        for await (const chunk of stream) {
-          if (signal.aborted) {
-            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText + "\n\nGeneration stopped by user.", isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
-            setIsLoading(false);
-            return;
-          }
-          const chunkText = chunk.text;
-          accumulatedText += chunkText;
-          if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-            currentGroundingChunks = chunk.candidates[0].groundingMetadata.groundingChunks.map((gc: any) => ({ web: gc.web }));
-          }
-          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true, groundingSources: currentGroundingChunks } : m));
-        }
-        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false, isError: false, groundingSources: currentGroundingChunks } : m));
-
-      } else if (currentProviderForMainExecution === AIProvider.OPENAI || currentProviderForMainExecution === AIProvider.OPENROUTER) {
-        if (!openaiClient) {
-          const keyName = currentProviderForMainExecution === AIProvider.OPENAI ? "OpenAI API Key (e.g. import.meta.env.VITE_OPENAI_API_KEY)" : "OpenRouter API Key (e.g. import.meta.env.VITE_OPENROUTER_API_KEY)";
-          setError(`${keyName} is not available or empty. Please ensure it's set in your environment.`);
-          setIsLoading(false);
-          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: `Error: ${keyName} missing.`, isLoading: false, isError: true } : m));
-          return;
-        }
-        
-        let messagesToOpenAI: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-
-        if (enableGeminiPreprocessing && currentProviderForMainExecution === AIProvider.OPENROUTER) {
-            messagesToOpenAI = openAIHistoryForMainExecution; // Already prepared
-        } else {
-            messagesToOpenAI = [{ role: 'system', content: getSystemPromptForSelectedModel() }];
-            const userOpenAIMessageContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text: mainExecutionPrompt }];
-            if (mainExecutionImagePart && currentModelConfig.supportsVision && mainExecutionImagePart.inlineData) {
-                userOpenAIMessageContent.push({
-                type: 'image_url',
-                image_url: { url: `data:${mainExecutionImagePart.inlineData.mimeType};base64,${mainExecutionImagePart.inlineData.data}` },
-                });
-            }
-            messagesToOpenAI.push({ role: 'user', content: userOpenAIMessageContent });
-        }
-        
-        setCurrentOpenAIChatHistory(messagesToOpenAI);
-
-        const stream = await openaiClient.chat.completions.create({
-          model: mainExecutionModelId,
-          messages: messagesToOpenAI,
-          stream: true,
-          temperature: modelConfigParams.temperature as number ?? undefined,
-          top_p: modelConfigParams.topP as number ?? undefined,
-          max_tokens: modelConfigParams.max_tokens as number ?? undefined,
-        });
-
-        let accumulatedText = "";
-        for await (const chunk of stream) {
-          if (signal.aborted) {
-            setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText + "\n\nGeneration stopped by user.", isLoading: false } : m));
-            setIsLoading(false);
-            return;
-          }
-          accumulatedText += chunk.choices[0]?.delta?.content || "";
-          setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: true } : m));
-        }
-        setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: accumulatedText, isLoading: false } : m));
-        setCurrentOpenAIChatHistory(prev => [...prev, {role: 'assistant', content: accumulatedText}]);
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: aiMessageId,
+        sender: 'ai',
+        text: '',
+        isLoading: true,
+        timestamp: new Date(),
+        modelId: selectedModelId, // Reflects the model chosen for this SIFT analysis
+        isInitialSIFTReport: true,
+        originalQueryReportType: queryToUse.reportType
       }
-    } catch (e) {
-      console.error("API call failed:", e);
-      const errorText = e instanceof OpenAI.APIError ? `OpenAI API Error: ${e.message} (Code: ${e.status})` : `Request failed: ${e instanceof Error ? e.message : String(e)}`;
-      setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m));
-      setError(errorText);
-    } finally {
-      setIsLoading(false);
-      abortControllerRef.current = null;
-    }
-  };
+    ]);
 
+    try {
+      // `userImageFile` is of type `File | null`. Pass it directly.
+      // `initiateSiftAnalysis` expects `userImageFile?: File`.
+      // If `isRestart` is true and `userImageFile` is null (e.g., after a page refresh),
+      // but `queryToUse.imageBase64` exists, the current `initiateSiftAnalysis` signature
+      // does not directly support passing base64. This refactor adheres to passing `userImageFile`.
+      // The backend would need to handle `queryToUse.text` which might implicitly refer to an image,
+      // or the `initiateSiftAnalysis` API and backend would need changes to accept base64.
+      // For now, we pass the current `userImageFile` state (which could be null).
+
+      const textToAnalyze = queryToUse.text || ''; // Ensure text is at least an empty string.
+      const imageFileToPass = userImageFile; // This is `File | null`. API expects `File | undefined`. Null should be fine.
+
+      const response = await initiateSiftAnalysis(
+        textToAnalyze,
+        imageFileToPass || undefined, // Explicitly pass undefined if userImageFile is null
+        queryToUse.reportType,
+        selectedModelId,
+        modelConfigParams
+      );
+
+      setCurrentStreamUrl(response.streamUrl); // Store the stream URL from the API response.
+      setIsLoading(false); // Set loading to false; SSE handler will update the AI message.
+      // The AI message placeholder (already added) will be updated by an SSE handler (to be implemented elsewhere).
+
+    } catch (apiError: any) {
+      console.error("initiateSiftAnalysis API call failed:", apiError);
+      const errorText = apiError.message || "Failed to initiate SIFT analysis. Please try again.";
+      setError(errorText);
+      // Update the AI message placeholder to show the error.
+      setChatMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, text: errorText, isLoading: false, isError: true } : m));
+      setIsLoading(false);
+    }
+    // Removed old direct SDK calls, prompt construction, and related streaming logic.
+    // abortControllerRef is no longer managed directly within this core path.
+  };
 
   const handleSendChatMessage = async (messageText: string, command?: 'another round' | 'read the room') => {
     if (!isChatActive || isLoading) return;
@@ -672,8 +544,9 @@ const App: React.FC = () => {
 
   const handleClearChatAndReset = (resetInputFields = true) => {
     setChatMessages([]);
-    setCurrentChat(null);
-    setCurrentOpenAIChatHistory([]);
+    setCurrentChat(null); // Related to old Gemini direct client
+    setCurrentOpenAIChatHistory([]); // Related to old OpenAI direct client
+    setCurrentStreamUrl(null); // Reset the stream URL
     setIsChatActive(false);
     setIsLoading(false);
     setError(null);
@@ -684,7 +557,7 @@ const App: React.FC = () => {
     }
     setOriginalQueryForRestart(null);
     setCurrentSiftQueryDetails(null);
-    setGeminiPreprocessingOutputText(null);
+    setGeminiPreprocessingOutputText(null); // Related to old preprocessing logic
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -753,6 +626,7 @@ const App: React.FC = () => {
           </h1>
            <p className="text-sm text-slate-400">
             Provider: <span className="font-semibold text-indigo-400">{selectedProviderKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+            {/* The 'enableGeminiPreprocessing' might be removed or its meaning changed with the new backend */}
             {selectedProviderKey === AIProvider.OPENROUTER && enableGeminiPreprocessing && " (with Gemini Preprocessing)"}
             {selectedModelDetails && ` | Model: ${selectedModelDetails.name}`}
           </p>
@@ -770,13 +644,15 @@ const App: React.FC = () => {
               reportType={reportType}
               setReportType={setReportType}
               onStartChat={() => { 
+                // This client-side key check can remain for immediate UI feedback,
+                // but the backend will ultimately validate any necessary keys.
                 if (checkAPIKeysAndSetError()) {
                   handleStartChat();
                 }
               }}
               isLoading={isLoading}
               isChatActive={isChatActive}
-              onStopGeneration={handleStopGeneration}
+              onStopGeneration={handleStopGeneration} // This will need to interact with the SSE stream
               selectedModelSupportsVision={modelSupportsVision}
             />
             {isLoading && <LoadingSpinner reportType={reportType} onTimeout={handleStopGeneration} />}
@@ -794,9 +670,9 @@ const App: React.FC = () => {
               <ChatInterface
                 ref={chatContainerRef}
                 messages={chatMessages}
-                onSendMessage={handleSendChatMessage}
-                isLoading={isLoading}
-                onStopGeneration={handleStopGeneration}
+                onSendMessage={handleSendChatMessage} // Follow-up messages will also use the new backend/SSE logic
+                isLoading={isLoading} // Reflects loading state from initiateSiftAnalysis and SSE stream
+                onStopGeneration={handleStopGeneration} // Should signal backend to stop SSE stream
                 onRestartGeneration={handleRestartGeneration}
                 canRestart={originalQueryForRestart !== null && !isLoading}
               />
@@ -805,11 +681,12 @@ const App: React.FC = () => {
         )}
 
         <footer className="mt-auto pt-3 text-center text-xs text-slate-500 flex-shrink-0">
-          <p>Powered by GenAI | SIFT Methodology. Ensure API keys are configured in your environment.</p>
+          <p>SIFT Toolbox. API interactions are now primarily handled by a backend service.</p>
            <p>
-            {geminiApiKey ? "Gemini Key: Loaded" : <span className="text-red-400">Gemini Key: Not Loaded</span>} | 
-            {openaiApiKey ? "OpenAI Key: Loaded" : <span className="text-red-400">OpenAI Key: Not Loaded</span>} |
-            {openrouterApiKey ? "OpenRouter Key: Loaded" : <span className="text-red-400">OpenRouter Key: Not Loaded</span>}
+            {/* Client-side key status might be less relevant or represent local availability for other potential direct calls */}
+            {geminiApiKey ? "Gemini Key: Loaded (client)" : <span className="text-red-400">Gemini Key: Not Loaded (client)</span>} |
+            {openaiApiKey ? "OpenAI Key: Loaded (client)" : <span className="text-red-400">OpenAI Key: Not Loaded (client)</span>} |
+            {openrouterApiKey ? "OpenRouter Key: Loaded (client)" : <span className="text-red-400">OpenRouter Key: Not Loaded (client)</span>}
           </p>
         </footer>
       </main>
