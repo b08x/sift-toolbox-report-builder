@@ -1,0 +1,5 @@
+meta:
+  name: SIFT Full Check
+behaviors:
+  interaction:
+    directive: "Generated <%= current_date %>. User query: <%= user_query %>."
