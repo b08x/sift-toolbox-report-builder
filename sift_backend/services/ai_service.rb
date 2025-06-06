@@ -65,10 +65,12 @@ module AIService
 
         # 4. Prepare image if present
         image_path = nil
-        if image_file_details
-          processed_image = ImageHandler.process_image(image_file_details)
-          image_path = processed_image[:path] if processed_image && processed_image[:path]
-          puts "AIService: Processed image, path: #{image_path}" if image_path
+        if image_file_details && image_file_details[:file_path]
+          image_path = image_file_details[:file_path]
+          # We can keep the log line, or adjust it if :original_mime_type is also useful to log
+          puts "AIService: Using image file provided at path: #{image_path} (MIME: #{image_file_details[:original_mime_type]})"
+        else
+          puts "AIService: No image file details provided or path is missing."
         end
 
         # 5. Construct the current user prompt
