@@ -32,6 +32,38 @@ import {
 import { AVAILABLE_PROVIDERS_MODELS } from './models.config';
 import { initiateSiftAnalysis } from './services/apiClient';
 
+// Helper function to update the last AI message that is currently loading
+const updateLastLoadingAiMessage = (
+  messages: ChatMessage[],
+  updates: Partial<Omit<ChatMessage, 'id' | 'sender' | 'timestamp' | 'originalQuery' | 'originalQueryReportType' | 'modelId' | 'imagePreviewUrl' | 'groundingSources' >>
+  // Be specific about what fields can be updated by typical SSE events.
+  // 'text', 'isLoading', 'isError' are common.
+): ChatMessage[] => {
+  let targetMessageIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].sender === 'ai' && messages[i].isLoading) {
+      targetMessageIndex = i;
+      break;
+    }
+  }
+
+  if (targetMessageIndex !== -1) {
+    const updatedMessage = {
+      ...messages[targetMessageIndex],
+      ...updates,
+    };
+    const newMessages = [...messages];
+    newMessages[targetMessageIndex] = updatedMessage;
+    return newMessages;
+  } else {
+    // It's possible that by the time an event (like 'complete' or 'error') arrives,
+    // the message is no longer marked as 'isLoading' or has been removed.
+    // Or, if multiple 'error'/'complete' events arrive rapidly.
+    console.warn("updateLastLoadingAiMessage: No currently loading AI message found to update. This might be normal if the stream ended or errored already.");
+    return messages;
+  }
+};
+
 const App: React.FC = () => {
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const [userInputText, setUserInputText] = useState<string>('');
@@ -365,15 +397,14 @@ const App: React.FC = () => {
       const textToAnalyze = queryToUse.text || ''; // Ensure text is at least an empty string.
       const imageFileToPass = userImageFile; // This is `File | null`. API expects `File | undefined`. Null should be fine.
 
-      const response = await initiateSiftAnalysis(
-        textToAnalyze,
-        imageFileToPass || undefined, // Explicitly pass undefined if userImageFile is null
-        queryToUse.reportType,
-        selectedModelId,
-        modelConfigParams
-      );
-
-      setCurrentStreamUrl(response.streamUrl); // Store the stream URL from the API response.
+      const streamUrl = await initiateSiftAnalysis({
+        userInputText: textToAnalyze,
+        userImageFile: imageFileToPass || undefined,
+        reportType: queryToUse.reportType,
+        selectedModelId: selectedModelId,
+        modelConfigParams: modelConfigParams
+      });
+      setCurrentStreamUrl(streamUrl); // Store the stream URL from the API response.
       setIsLoading(false); // Set loading to false; SSE handler will update the AI message.
       // The AI message placeholder (already added) will be updated by an SSE handler (to be implemented elsewhere).
 
@@ -600,6 +631,118 @@ const App: React.FC = () => {
     checkAPIKeysAndSetError();
   }, [selectedProviderKey, geminiApiKey, openaiApiKey, openrouterApiKey, enableGeminiPreprocessing]);
 
+  // Effect for handling Server-Sent Events (SSE)
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+
+    if (currentStreamUrl && currentStreamUrl.trim() !== '') {
+      console.log('SSE: Connecting to', currentStreamUrl);
+      eventSource = new EventSource(currentStreamUrl);
+
+      eventSource.onopen = () => {
+        console.log('SSE: Connection established');
+      };
+
+      eventSource.onmessage = (event) => {
+        console.log('SSE: Received message:', event.data);
+        try {
+          const parsedData = JSON.parse(event.data);
+
+          setChatMessages(prevMsgs => {
+            const currentLastLoadingMessage = prevMsgs.slice().reverse().find(m => m.sender === 'ai' && m.isLoading);
+            if (!currentLastLoadingMessage) {
+                 console.warn('SSE onmessage: No loading AI message found to update with data:', parsedData);
+                 return prevMsgs;
+            }
+
+            let newText = currentLastLoadingMessage.text || '';
+            if (parsedData.delta && typeof parsedData.delta === 'string') {
+              newText += parsedData.delta;
+            } else if (parsedData.text_chunk && typeof parsedData.text_chunk === 'string') {
+              newText = parsedData.text_chunk; // Replace as per original instruction
+            }
+            return updateLastLoadingAiMessage(prevMsgs, { text: newText });
+          });
+        } catch (e) {
+          console.error('SSE: Failed to parse message data or update chat:', e, event.data);
+        }
+      };
+
+      eventSource.onerror = (errorEvent) => {
+        console.error('SSE: Connection error:', errorEvent);
+
+        setChatMessages(prevMsgs => updateLastLoadingAiMessage(prevMsgs, {
+          text: "An error occurred while streaming the response. Please try again.",
+          isLoading: false,
+          isError: true,
+        }));
+
+        setError("SSE connection failed. Check the console for more details.");
+        if (eventSource) {
+          eventSource.close();
+        }
+        setCurrentStreamUrl(null); // Prevent reconnection attempts
+      };
+
+      eventSource.addEventListener('error', (event) => {
+        // This is for custom 'error' type events from the backend, distinct from eventSource.onerror
+        console.error('SSE: Received custom backend error event:', event);
+
+        let backendErrorMessage = "An error occurred on the backend.";
+        // Standard EventSource events don't have a 'data' field directly on the event object for 'error' type listeners.
+        // However, if the server sends a custom event *named* 'error' with data, it will be a MessageEvent.
+        if (event instanceof MessageEvent && event.data) {
+          try {
+            const parsedData = JSON.parse(event.data);
+            backendErrorMessage = parsedData.message || parsedData.error || backendErrorMessage;
+          } catch (e) {
+            console.error('SSE: Failed to parse custom backend error event data:', e, event.data);
+            // Use the default backendErrorMessage if parsing fails
+          }
+        } else {
+          // If it's not a MessageEvent or has no data, it might be a generic error event
+          // that somehow got routed here. We'll use a generic message.
+          console.warn('SSE: Custom backend error event did not contain parsable data. Event:', event);
+        }
+
+        setChatMessages(prevMsgs => updateLastLoadingAiMessage(prevMsgs, {
+          text: backendErrorMessage,
+          isLoading: false,
+          isError: true,
+        }));
+
+        setError(backendErrorMessage); // Set global error state
+        setIsLoading(false); // Set global loading to false
+
+        if (eventSource) {
+          eventSource.close();
+        }
+        setCurrentStreamUrl(null);
+      });
+
+      eventSource.addEventListener('complete', (event) => {
+        console.log('SSE: Received stream complete event:', event);
+        // Optionally, parse event.data if the backend sends any final message or metadata with 'complete'.
+        // For now, we assume 'complete' is just a signal to finalize.
+
+        setChatMessages(prevMsgs => updateLastLoadingAiMessage(prevMsgs, { isLoading: false }));
+
+        setIsLoading(false); // Set global loading to false
+
+        if (eventSource) {
+          eventSource.close();
+        }
+        setCurrentStreamUrl(null); // Clean up URL
+      });
+    }
+
+    return () => {
+      if (eventSource) {
+        console.log('SSE: Closing connection');
+        eventSource.close();
+      }
+    };
+  }, [currentStreamUrl, setChatMessages, setError, setIsLoading, setCurrentStreamUrl, chatMessages]);
 
   return (
     <div className="flex flex-col md:flex-row h-screen max-h-screen bg-slate-900 text-slate-100">
