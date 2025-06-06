@@ -7,16 +7,17 @@ SIFT-Toolbox is a full-stack application designed to assist users in fact-checki
 * **AI-Powered SIFT Analysis:** Leverages various AI models to guide users through the SIFT process.
 * **Dynamic Model Configuration:** Fetches available AI models and their configurations dynamically from the backend.
 * **Image Upload and Analysis:** Supports image uploads for analysis, including validation for file type and size.
-* **Structured AI Prompts:** Utilizes detailed YAML-based prompt configurations for tailored AI responses.
+* **Structured AI Prompts:** Utilizes detailed YAML-based prompt configurations with ERB templating for tailored AI responses.
+* **Prompt Management System:** Provides a unified interface for managing YAML-based prompts with ERB templating, integrated with AgentManager.
 * **Client-Server Architecture:** React/TypeScript frontend with a Ruby/Sinatra backend.
 * **Real-time AI Responses:** Uses Server-Sent Events (SSE) for streaming AI outputs.
-* **Database Integration:** PostgreSQL backend for data persistence.
+* **Database Integration:** PostgreSQL with pgvector for data persistence, including storage of SIFT reports and conversation history.
 * **Docker Support:** Includes [`docker-compose.yml`](docker-compose.yml:1) for easy setup and deployment.
 
 ## Architecture
 
 * **Frontend (`client/`):** Built with React, TypeScript, and Vite. Handles user interaction and displays AI-generated SIFT analysis.
-* **Backend (`server/`):** A Ruby Sinatra application. Manages AI model interactions, SIFT logic, API key handling, and database operations.
+* **Backend (`server/`):** A Ruby Sinatra application. Manages AI model interactions, SIFT logic, API key handling, prompt management, and database operations.
 
 ## Project Structure
 
@@ -66,6 +67,8 @@ The project is organized into two main directories:
     bundle exec rake db:migrate
     ```
 
+    The application uses pgvector for efficient storage and retrieval of SIFT reports and conversation history.
+
 5. **Running the Backend Server:**
 
     ```bash
@@ -114,7 +117,7 @@ The project is organized into two main directories:
     docker-compose up --build
     ```
 
-    This will build the images and start the frontend and backend services.
+    This will build the images and start the frontend and backend services, including the pgvector database for storing SIFT analyses and conversation history.
 
 ## Development
 
@@ -140,6 +143,43 @@ bundle exec ruby app.rb   # Run server (development)
 bundle exec rubocop       # Linting
 bundle exec rubocop -a    # Auto-fix linting issues
 ```
+
+## Key Components
+
+### Prompt Management System
+
+The application includes a sophisticated prompt management system that:
+
+* Uses YAML-based configuration files for structured prompts
+* Supports ERB templating for dynamic content insertion
+* Integrates with the AgentManager for agent-specific behaviors
+* Provides a unified interface through the PromptManager service
+
+Example usage:
+
+```ruby
+# Get a prompt with default context
+prompt = PromptManager.get_prompt(:sift_chat_system_prompt)
+
+# Get a prompt with user input
+prompt_with_input = PromptManager.get_prompt_with_user_input(
+  :sift_full_check_prompt,
+  user_input: "Text to analyze"
+)
+```
+
+### Data Persistence
+
+The application stores SIFT analyses and conversation history using:
+
+* PostgreSQL with pgvector extension
+* Models for SiftAnalysis, ChatMessage, and ProcessedURL
+* PersistenceService for database operations
+
+This enables:
+* Saving complete SIFT reports
+* Storing conversation history between users and the AI
+* Tracking analyzed URLs and their metadata
 
 ***
 
