@@ -50,7 +50,7 @@ module AIService
         # 2. Set system instructions (applies to the whole conversation)
         # This should ideally be set once if the chat object is long-lived.
         # For stateless calls, set it every time.
-        system_prompt = PromptManager.get_prompt(:sift_chat_system_prompt)
+        system_prompt = PromptManager.get_sift_chat_system_prompt(user_query: user_input_text)
         chat.with_instructions(system_prompt)
 
         # 3. Load chat history if provided
@@ -74,17 +74,17 @@ module AIService
 
         # 5. Construct the current user prompt
         current_user_prompt_text = ''
-        if chat_history && !chat_history.empty?
-          # If there's history, the new user_input_text is the current prompt
-          current_user_prompt_text = user_input_text
-        else
-          # For an initial request, use the report_type to format the prompt
-          # The SIFT_FULL_CHECK_PROMPT might include a placeholder for the image description
-          # or we might need to append a standard "Image is attached" message.
-          # For now, we assume the prompt template handles user_input_text.
-          prompt_key = "sift_#{report_type.downcase}_prompt".to_sym
-          current_user_prompt_text = PromptManager.get_prompt_with_user_input(prompt_key, user_input: user_input_text)
-        end
+        current_user_prompt_text = if chat_history && !chat_history.empty?
+                                     # If there's history, the new user_input_text is the current prompt
+                                     user_input_text
+                                   else
+                                     # For an initial request, use the report_type to format the prompt
+                                     # Use the new PromptManager method for analysis prompts
+                                     PromptManager.get_sift_analysis_prompt(
+                                       report_type: report_type,
+                                       user_input: user_input_text
+                                     )
+                                   end
 
         unless current_user_prompt_text && !current_user_prompt_text.strip.empty?
           # Handle cases where prompt might be empty if user_input_text is nil and not handled by PromptManager
@@ -212,7 +212,7 @@ data: #{error_json}
           chat.with_instructions(system_instruction_override, replace: true)
         else
           puts 'AIService: Using default SIFT chat system prompt.'
-          chat.with_instructions(PromptManager.get_prompt(:sift_chat_system_prompt), replace: true)
+          chat.with_instructions(PromptManager.get_sift_chat_system_prompt, replace: true)
         end
 
         # 3. Load chat history

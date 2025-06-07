@@ -12,14 +12,19 @@ module PromptManager
   class << self
     PROMPT_TYPE_MAPPING = {
       # System prompts
-      sift_chat_system_prompt: { agent: 'sift_full_check', behavior: :interaction, key: :directive },
+      sift_chat_system_prompt: { agent: 'sift_full_check_enhanced', behavior: :interaction, key: :directive },
 
-      # Report type prompts
-      sift_full_check_prompt: { agent: 'sift_full_check', behavior: :boot, key: :directive }
+      # Report type prompts - Enhanced versions
+      sift_full_check_prompt: { agent: 'sift_full_check_enhanced', behavior: :boot, key: :directive },
+      sift_summary_prompt: { agent: 'sift_summary', behavior: :boot, key: :directive },
+      sift_image_analysis_prompt: { agent: 'sift_image_analysis', behavior: :boot, key: :directive },
 
-      # Future extensibility - these can be added as new agent configs are created
-      # sift_summary_prompt: { agent: 'sift_summary', behavior: :boot, key: :directive },
-      # sift_image_analysis_prompt: { agent: 'sift_image_analysis', behavior: :boot, key: :directive }
+      # Specialized prompts
+      sift_context_report_prompt: { agent: 'sift_full_check_enhanced', behavior: :context_report, key: :directive },
+      sift_community_note_prompt: { agent: 'sift_full_check_enhanced', behavior: :community_note, key: :directive },
+
+      # Legacy compatibility - keep original for backward compatibility
+      sift_full_check_legacy_prompt: { agent: 'sift_full_check', behavior: :boot, key: :directive }
     }.freeze
 
     # Standard context variables that can be used in ERB templates
@@ -27,9 +32,28 @@ module PromptManager
       {
         current_date: Date.today.strftime('%Y-%m-%d'),
         current_time: Time.now.strftime('%Y-%m-%d %H:%M:%S'),
+        current_datetime: Time.now.strftime('%Y-%m-%d %H:%M:%S %Z'),
         application_name: 'SIFT-Toolbox',
-        version: '1.0',
-        environment: ENV['RACK_ENV'] || 'development'
+        version: '2.0',
+        environment: ENV['RACK_ENV'] || 'development',
+
+        # SIFT-specific variables
+        sift_version: '2.0',
+        methodology: 'SIFT (Stop, Investigate, Find, Trace)',
+
+        # Template helpers for common formatting
+        format_confidence: ->(score) { "#{score}/5" },
+        format_status: lambda { |status|
+          if status == 'verified'
+            '✅'
+          else
+            status == 'error' ? '❌' : '❓'
+          end
+        },
+
+        # Date formatting helpers
+        iso_date: Date.today.iso8601,
+        human_date: Date.today.strftime('%B %d, %Y')
       }
     end
 
@@ -145,6 +169,66 @@ module PromptManager
       context_vars[:user_query] = user_input if user_input # Alternative key name for compatibility
 
       get_prompt(prompt_key, context_vars)
+    end
+
+    # Convenience methods for specific SIFT prompt types
+
+    # Get the SIFT chat system prompt for conversational interactions
+    #
+    # @param user_query [String] Optional user query for context
+    # @param additional_context [Hash] Additional context variables
+    # @return [String] The processed system prompt
+    def get_sift_chat_system_prompt(user_query: nil, **additional_context)
+      context = additional_context.dup
+      context[:user_query] = user_query if user_query
+      get_prompt(:sift_chat_system_prompt, context)
+    end
+
+    # Get a SIFT analysis prompt for the specified report type
+    #
+    # @param report_type [String] The type of report ('FULL_CHECK', 'SUMMARY', 'IMAGE_ANALYSIS')
+    # @param user_input [String] The content to analyze
+    # @param additional_context [Hash] Additional context variables
+    # @return [String] The processed analysis prompt
+    def get_sift_analysis_prompt(report_type:, user_input: nil, **additional_context)
+      prompt_key = case report_type.to_s.upcase
+                   when 'FULL_CHECK'
+                     :sift_full_check_prompt
+                   when 'SUMMARY'
+                     :sift_summary_prompt
+                   when 'IMAGE_ANALYSIS'
+                     :sift_image_analysis_prompt
+                   else
+                     :sift_full_check_prompt # Default fallback
+                   end
+
+      context = additional_context.dup
+      context[:user_input] = user_input if user_input
+      context[:report_type] = report_type
+
+      get_prompt(prompt_key, context)
+    end
+
+    # Get a context report prompt for comprehensive analysis summaries
+    #
+    # @param subject [String] The subject being analyzed
+    # @param additional_context [Hash] Additional context variables
+    # @return [String] The processed context report prompt
+    def get_context_report_prompt(subject: nil, **additional_context)
+      context = additional_context.dup
+      context[:subject] = subject if subject
+      get_prompt(:sift_context_report_prompt, context)
+    end
+
+    # Get a community note prompt for Twitter-style fact-check notes
+    #
+    # @param artifact [String] The artifact being fact-checked
+    # @param additional_context [Hash] Additional context variables
+    # @return [String] The processed community note prompt
+    def get_community_note_prompt(artifact: nil, **additional_context)
+      context = additional_context.dup
+      context[:artifact] = artifact if artifact
+      get_prompt(:sift_community_note_prompt, context)
     end
 
     # List all available prompt keys
