@@ -20,7 +20,13 @@ begin
 
   # Load Sequel extensions for PostgreSQL specific types
   DB.extension :pg_json
-  DB.extension :pg_hstore
+  
+  # Only enable pgvector if the extension is available
+  begin
+    DB.run "CREATE EXTENSION IF NOT EXISTS vector"
+  rescue Sequel::DatabaseError => e
+    puts "Warning: Could not enable vector extension: #{e.message}"
+  end
 
   # Test connection
   DB.test_connection

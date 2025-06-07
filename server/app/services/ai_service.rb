@@ -4,7 +4,7 @@ require 'json'
 require 'ruby_llm' # Assuming ruby_llm is loaded via Bundler or accessible
 require_relative 'prompt_manager'
 require_relative 'persistence_service'
-require_relative '../lib/image_handler' # Adjust path if necessary
+require_relative '../../lib/image_handler' # Adjust path if necessary
 
 module AIService
   class << self

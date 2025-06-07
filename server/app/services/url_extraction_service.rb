@@ -4,7 +4,9 @@ require 'net/http'
 require 'uri'
 require 'nokogiri'
 require 'timeout'
+require 'stringio'
 require_relative '../models/processed_url'
+require_relative 'embedding_service'
 
 # URLExtractionService handles fetching and parsing web content
 module URLExtractionService
@@ -43,18 +45,31 @@ module URLExtractionService
         max_content_length: max_content_length
       )
 
+      # Generate embedding for the extracted content
+      embedding = nil
+      if extraction_result[:content] && !extraction_result[:content].strip.empty?
+        begin
+          embedding = EmbeddingService.generate_embedding(text: extraction_result[:content])
+          puts "URLExtractionService: Generated embedding with #{embedding&.length} dimensions"
+        rescue EmbeddingService::EmbeddingError => e
+          puts "URLExtractionService: Warning - Failed to generate embedding: #{e.message}"
+        end
+      end
+
       # Persist or update the extracted content
       processed_url = if existing
                         existing.update_content(
                           extracted_title: extraction_result[:title],
-                          extracted_content: extraction_result[:content]
+                          extracted_content: extraction_result[:content],
+                          embedding: embedding
                         )
                         existing.refresh
                       else
                         ProcessedUrl.create_from_url(
                           original_url: normalized_url,
                           extracted_title: extraction_result[:title],
-                          extracted_content: extraction_result[:content]
+                          extracted_content: extraction_result[:content],
+                          embedding: embedding
                         )
                       end
 
@@ -151,6 +166,19 @@ module URLExtractionService
             end
 
             body = response.body
+            
+            # Handle gzipped content
+            if response['content-encoding']&.include?('gzip') && body
+              require 'zlib'
+              body = Zlib::GzipReader.new(StringIO.new(body)).read
+            end
+            
+            # Force UTF-8 encoding and clean invalid characters
+            if body&.encoding != Encoding::UTF_8
+              body = body.force_encoding('UTF-8')
+            end
+            body = body&.scrub('?') || '' # Replace invalid characters with '?'
+            
             if body.length > max_content_length
               raise NetworkError, "Response body too large: #{body.length} bytes (max: #{max_content_length})"
             end
@@ -178,7 +206,7 @@ module URLExtractionService
 
     # Parse HTML content and extract meaningful text
     def parse_html_content(html)
-      doc = Nokogiri::HTML(html)
+      doc = Nokogiri::HTML(html, nil, 'UTF-8')
 
       # Extract title
       title = extract_title(doc)

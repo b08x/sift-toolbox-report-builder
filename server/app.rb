@@ -7,8 +7,9 @@ require 'securerandom' # For generating unique IDs
 require_relative 'config/database' # Load database configuration
 require_relative 'config/config' # Load API key configuration
 require_relative 'config/initializers/ruby_llm' # Load AI service configuration
-require_relative 'services/sift_service'
-require_relative 'services/ai_service' # For AIService.continue_sift_chat
+require_relative 'app/services/sift_service'
+require_relative 'app/services/ai_service' # For AIService.continue_sift_chat
+require_relative 'app/services/embedding_service'
 require_relative 'lib/image_handler'
 require_relative 'app/controllers/url_controller'
 
@@ -160,6 +161,63 @@ get '/api/health' do
   settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
   content_type :json
   { message: 'OK', timestamp: Time.now.iso8601 }.to_json
+end
+
+# Semantic search endpoint for URL content
+post '/api/search/semantic' do
+  settings.logger.info "Received #{request.request_method} request for #{request.path_info}"
+  content_type :json
+
+  begin
+    # Parse request body
+    request_body = request.body.read
+    data = JSON.parse(request_body)
+    
+    query = data['query']&.strip
+    limit = (data['limit'] || 10).to_i.clamp(1, 50)
+    
+    if query.nil? || query.empty?
+      halt 400, { error: 'Query parameter is required' }.to_json
+    end
+
+    # Generate embedding for the search query
+    query_embedding = EmbeddingService.generate_embedding(text: query)
+    
+    if query_embedding.nil?
+      halt 500, { error: 'Failed to generate embedding for query' }.to_json
+    end
+
+    # Search for similar content
+    results = ProcessedUrl.search_similar(query_embedding, limit)
+    
+    # Format response
+    formatted_results = results.map do |url|
+      {
+        id: url.id,
+        url: url.original_url,
+        title: url.extracted_title,
+        content_preview: url.content_preview(300),
+        processed_at: url.processed_at,
+        similarity_score: url.similarity_to(query_embedding)
+      }
+    end
+
+    {
+      success: true,
+      query: query,
+      results: formatted_results,
+      total_results: formatted_results.length
+    }.to_json
+
+  rescue JSON::ParserError
+    halt 400, { error: 'Invalid JSON in request body' }.to_json
+  rescue EmbeddingService::EmbeddingError => e
+    settings.logger.error "Embedding generation failed: #{e.message}"
+    halt 500, { error: 'Failed to process search query' }.to_json
+  rescue StandardError => e
+    settings.logger.error "Semantic search error: #{e.message}"
+    halt 500, { error: 'Internal server error during search' }.to_json
+  end
 end
 
 # Model configuration endpoint - serves AI model configurations

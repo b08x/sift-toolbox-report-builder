@@ -15,31 +15,31 @@ help:
 
 # Build the Docker image
 build:
-	docker-compose -f docker/docker-compose.yml build
+	docker-compose build
 
 # Run in production mode
 run:
-	docker-compose -f docker/docker-compose.yml up -d
+	docker-compose up -d
 
 # Run in development mode
 dev:
-	docker-compose -f docker/docker-compose.yml --profile dev up sift-toolbox-dev
+	docker-compose --profile dev up sift-toolbox-dev
 
 # Stop all containers
 stop:
-	docker-compose -f docker/docker-compose.yml down
+	docker-compose down
 
 # Clean up containers and images
 clean:
-	docker-compose -f docker/docker-compose.yml down --rmi all --volumes
+	docker-compose down --rmi all --volumes
 
 # View logs
 logs:
-	docker-compose -f docker/docker-compose.yml logs -f
+	docker-compose logs -f
 
 # Open shell in running container
 shell:
-	docker-compose -f docker/docker-compose.yml exec sift-toolbox sh
+	docker-compose exec sift-toolbox sh
 
 # Build with specific API key (for CI/CD)
 build-with-key:
@@ -47,7 +47,7 @@ build-with-key:
 		echo "Error: GEMINI_API_KEY is not set"; \
 		exit 1; \
 	fi
-	docker-compose -f docker/docker-compose.yml build --build-arg GEMINI_API_KEY=$(GEMINI_API_KEY)
+	docker-compose build --build-arg GEMINI_API_KEY=$(GEMINI_API_KEY)
 
 # Run production build locally
 run-prod-local:

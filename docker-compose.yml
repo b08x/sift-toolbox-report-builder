@@ -1,43 +1,62 @@
-services:
-  sift-toolbox:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile # Updated to the correct Dockerfile
-    ports:
-      - "3000:80"
-    environment:
-      - NODE_ENV=production
-    env_file:
-      - .env
-    restart: unless-stopped
-    
-  # Development service (optional)
-  sift-toolbox-dev:
-    image: node:20-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
-      - /app/node_modules
-    ports:
-      - "5173:5173"
-    command: sh -c "npm install && npm run dev -- --host"
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-    profiles:
-      - dev
+version: '3.8'
 
-  pgvector:
+services:
+  # PostgreSQL with pgvector extension
+  database:
     image: ankane/pgvector
-    container_name: pgvector
+    container_name: sift-database
     restart: unless-stopped
     environment:
-      PUID: 1000
-      PGID: 1000
       POSTGRES_HOST_AUTH_METHOD: "trust"
       POSTGRES_DB: sift
       POSTGRES_USER: postgres
     ports:
       - "5432:5432"
     volumes:
-      - ./data/pg/local-data:/data
-      - ./data/pg/pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Ruby backend server
+  backend:
+    build:
+      context: ./server
+      dockerfile: ../docker/Dockerfile.backend
+    ports:
+      - "4567:4567"
+    environment:
+      - DATABASE_URL=postgresql://postgres@database:5432/sift
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./server:/app
+      - /app/tmp
+    restart: unless-stopped
+
+  # React frontend (development)
+  frontend:
+    build:
+      context: ./client
+      dockerfile: ../docker/Dockerfile.frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:4567
+    depends_on:
+      - backend
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,6 +1,6 @@
 # sift_backend/services/sift_service.rb
 require 'json'
-require_relative '../lib/image_handler' # For ImageHandler.process_uploaded_image
+require_relative '../../lib/image_handler' # For ImageHandler.process_uploaded_image
 require_relative './ai_service'     # For AIService.generate_sift_stream
 
 # It's good practice to have a logger available in services
@@ -60,15 +60,11 @@ module SiftService
       end
     rescue StandardError => e
       # LOGGER.error "SiftService: Error during analysis initiation: #{e.class.name} - #{e.message}"
-      # LOGGER.error e.backtrace.join("
-  ")
+      # LOGGER.error e.backtrace.join("\n")
       # Yield a generic error to the client if one hasn't been yielded by AIService already
       # This is a fallback. AIService should ideally handle its own errors and stream them.
       error_json = { error: "An unexpected error occurred in SiftService: #{e.message}", type: e.class.name }.to_json
-      block.call("event: error
-data: #{error_json}
-
-")
+      block.call("event: error\ndata: #{error_json}\n\n")
     end
   end
 end

@@ -70,8 +70,7 @@ module ImageHandler
     rescue StandardError => e
       # Log error if a logger was available
       # puts "ImageHandler: Error processing file: #{e.class} - #{e.message}
-Backtrace: #{e.backtrace.join("
-  ")}"
+# Backtrace: #{e.backtrace.join("\n")}"
 
       # If the file was copied before an error occurred (e.g., error in yield),
       # try to clean it up.

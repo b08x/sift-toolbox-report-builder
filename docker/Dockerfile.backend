@@ -1,0 +1,32 @@
+FROM ruby:3.4-alpine
+
+# Install system dependencies
+RUN apk add --no-cache \
+    build-base \
+    postgresql-dev \
+    tzdata \
+    curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy Gemfile and install gems
+COPY Gemfile Gemfile.lock ./
+RUN bundle config --global frozen 1 && \
+    bundle install --without development test
+
+# Copy application code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p log tmp
+
+# Expose port
+EXPOSE 4567
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:4567/api/health || exit 1
+
+# Start the application
+CMD ["bundle", "exec", "ruby", "app.rb", "-o", "0.0.0.0"]
