@@ -826,21 +826,20 @@ end
 # end
 
 #
-# Manual CORS Configuration (Alternative to using sinatra-cross_origin gem)
-#
-# before do
-#   headers['Access-Control-Allow-Origin'] = ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
-#   headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-#   headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
-# end
-#
-# options '*' do
-#   response.headers['Allow'] = 'GET, POST, PUT, DELETE, OPTIONS'
-#   response.headers['Access-Control-Allow-Origin'] = ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
-#   response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
-#   response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-#   halt 200
-# end
+# Manual CORS Configuration
+before do
+  headers['Access-Control-Allow-Origin'] = ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
+  headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+  headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+end
+
+options '*' do
+  response.headers['Allow'] = 'GET, POST, PUT, DELETE, OPTIONS'
+  response.headers['Access-Control-Allow-Origin'] = ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
+  response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+  response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+  halt 200
+end
 #
 
 # If you prefer a modular (classic) style Sinatra app:
