@@ -10,6 +10,7 @@ require_relative 'config/initializers/ruby_llm' # Load AI service configuration
 require_relative 'services/sift_service'
 require_relative 'services/ai_service' # For AIService.continue_sift_chat
 require_relative 'lib/image_handler'
+require_relative 'app/controllers/url_controller'
 
 class MyCustomError < StandardError; end
 
@@ -672,6 +673,58 @@ get '/api/sift/analyses/:analysis_id' do
     status 500
     { error: { type: 'DatabaseError', message: "Failed to retrieve analysis: #{e.message}" } }.to_json
   end
+end
+
+# URL Content Extraction Routes
+
+# Extract content from a URL
+post '/api/url/extract' do
+  settings.logger.info "POST /api/url/extract - Received request from #{request.ip}"
+  content_type :json
+
+  begin
+    # Parse JSON body for POST requests
+    request.body.rewind
+    params_data = JSON.parse(request.body.read)
+  rescue JSON::ParserError => e
+    settings.logger.error "Invalid JSON in request body: #{e.message}"
+    halt 400, { error: { type: 'InvalidJSONError', message: 'Invalid JSON format' } }.to_json
+  end
+
+  result = URLController.extract(params_data, settings.logger)
+  status result[:status]
+  result[:body].to_json
+end
+
+# Get recent processed URLs
+get '/api/url/recent' do
+  settings.logger.info "GET /api/url/recent - Received request from #{request.ip}"
+  content_type :json
+
+  result = URLController.recent(params, settings.logger)
+  status result[:status]
+  result[:body].to_json
+end
+
+# Search processed URLs
+get '/api/url/search' do
+  settings.logger.info "GET /api/url/search - Received request from #{request.ip}"
+  content_type :json
+
+  result = URLController.search(params, settings.logger)
+  status result[:status]
+  result[:body].to_json
+end
+
+# Get specific URL details
+get '/api/url/:identifier' do
+  identifier = params[:identifier]
+  settings.logger.info "GET /api/url/#{identifier} - Received request from #{request.ip}"
+  content_type :json
+
+  result = URLController.show(identifier, settings.logger)
+  status result[:status]
+  result[:body].to_json
 end
 
 # You can also define routes directly without a class:

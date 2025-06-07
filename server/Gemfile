@@ -10,6 +10,8 @@ gem 'sequel', '~> 5.7' # Or a more recent version
 gem 'sinatra', '~> 3.0' # Or specify a more recent version if desired
 gem 'sinatra-cross_origin'
 gem 'tty-config', '~> 0.6'
+gem 'nokogiri', '~> 1.15'
+gem 'net-http', '~> 0.3'
 
 group :development, :test do
   gem 'minitest', '~> 5.0'
