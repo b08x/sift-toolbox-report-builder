@@ -1,6 +1,6 @@
 source 'https://rubygems.org'
 
-gem 'dotenv', '~> 2.8', groups: %i[development test]
+gem 'dotenv', '~> 2.8'
 gem 'json', '~> 2.6'
 gem 'net-http', '~> 0.3'
 gem 'nokogiri', '~> 1.15'
