@@ -629,17 +629,50 @@ end
 # NOTE: To test Sinatra::NotFound, simply try to access any undefined route,
 # for example: /api/this-route-does-not-exist
 
-# Placeholder for future API routes
-# namespace '/api/v1' do
-#   before do
-#     content_type 'application/json'
-#   end
-#
-#   # Example route
-#   get '/items' do
-#     { message: 'This will be a list of items' }.to_json
-#   end
-# end
+# SIFT Analysis History Routes
+
+# Get recent SIFT analyses (list view)
+get '/api/sift/analyses' do
+  settings.logger.info "GET /api/sift/analyses - Retrieving recent analyses"
+  content_type :json
+
+  begin
+    limit = (params[:limit] || 50).to_i
+    limit = 50 if limit <= 0 || limit > 100 # Cap at reasonable limit
+
+    require_relative 'app/services/persistence_service'
+    analyses = PersistenceService.get_recent_analyses(limit)
+
+    { analyses: analyses, count: analyses.length }.to_json
+  rescue StandardError => e
+    settings.logger.error "Error retrieving analyses: #{e.message}"
+    status 500
+    { error: { type: 'DatabaseError', message: "Failed to retrieve analyses: #{e.message}" } }.to_json
+  end
+end
+
+# Get specific SIFT analysis with full conversation history
+get '/api/sift/analyses/:analysis_id' do
+  analysis_id = params[:analysis_id]
+  settings.logger.info "GET /api/sift/analyses/#{analysis_id} - Retrieving analysis with history"
+  content_type :json
+
+  begin
+    require_relative 'app/services/persistence_service'
+    analysis_data = PersistenceService.get_analysis_with_history(analysis_id)
+
+    if analysis_data
+      analysis_data.to_json
+    else
+      status 404
+      { error: { type: 'NotFoundError', message: "Analysis not found: #{analysis_id}" } }.to_json
+    end
+  rescue StandardError => e
+    settings.logger.error "Error retrieving analysis #{analysis_id}: #{e.message}"
+    status 500
+    { error: { type: 'DatabaseError', message: "Failed to retrieve analysis: #{e.message}" } }.to_json
+  end
+end
 
 # You can also define routes directly without a class:
 # get '/' do
