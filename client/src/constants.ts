@@ -11,4 +11,4 @@ export const EMOJI_TIP = "💡";
 export const SIFT_ICON = "🔍"; // Magnifying glass for SIFT
 
 // API Configuration
-export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:9292/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4567/api';

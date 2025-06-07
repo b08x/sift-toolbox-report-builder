@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL with pgvector extension
   database:
@@ -50,7 +48,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_BASE_URL=http://localhost:4567
+      - VITE_API_BASE_URL=http://localhost:4567/api
     depends_on:
       - backend
     volumes:
