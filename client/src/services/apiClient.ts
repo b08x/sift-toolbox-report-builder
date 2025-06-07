@@ -289,3 +289,175 @@ export const fetchModelConfigurations = async (): Promise<AIModelConfig[]> => {
     throw new Error('Unknown error occurred while fetching model configurations');
   }
 };
+
+// URL Extraction Types and Functions
+export interface ExtractUrlParams {
+  url: string;
+  forceRefresh?: boolean;
+  timeout?: number;
+}
+
+export interface ExtractedUrlData {
+  id: number;
+  url: string;
+  url_hash: string;
+  title?: string;
+  content?: string;
+  content_preview?: string;
+  processed_at: string;
+  last_fetched_at: string;
+  from_cache: boolean;
+  extraction_meta?: {
+    status_code?: number;
+    content_type?: string;
+    content_length?: number;
+    final_url?: string;
+    word_count?: number;
+    has_content?: boolean;
+  };
+}
+
+export interface ExtractUrlResponse {
+  success: boolean;
+  data: ExtractedUrlData;
+}
+
+export interface UrlSearchResponse {
+  success: boolean;
+  data: {
+    query: string;
+    urls: ExtractedUrlData[];
+    count: number;
+  };
+}
+
+export interface RecentUrlsResponse {
+  success: boolean;
+  data: {
+    urls: ExtractedUrlData[];
+    count: number;
+  };
+}
+
+export const extractUrlContent = async (params: ExtractUrlParams): Promise<ExtractedUrlData> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/url/extract`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`URL extraction failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: ExtractUrlResponse = await response.json();
+    
+    if (!result.success || !result.data) {
+      throw new Error('Invalid response format from URL extraction API');
+    }
+
+    return result.data;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error extracting URL content: ${error.message}`);
+    }
+    throw new Error('Unknown error occurred while extracting URL content');
+  }
+};
+
+export const searchUrls = async (query: string, limit?: number): Promise<UrlSearchResponse['data']> => {
+  try {
+    const params = new URLSearchParams({ q: query });
+    if (limit) params.append('limit', limit.toString());
+
+    const response = await fetch(`${API_BASE_URL}/url/search?${params}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`URL search failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: UrlSearchResponse = await response.json();
+    
+    if (!result.success || !result.data) {
+      throw new Error('Invalid response format from URL search API');
+    }
+
+    return result.data;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error searching URLs: ${error.message}`);
+    }
+    throw new Error('Unknown error occurred while searching URLs');
+  }
+};
+
+export const getRecentUrls = async (limit?: number): Promise<ExtractedUrlData[]> => {
+  try {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+
+    const response = await fetch(`${API_BASE_URL}/url/recent?${params}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Failed to fetch recent URLs with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: RecentUrlsResponse = await response.json();
+    
+    if (!result.success || !result.data) {
+      throw new Error('Invalid response format from recent URLs API');
+    }
+
+    return result.data.urls;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error fetching recent URLs: ${error.message}`);
+    }
+    throw new Error('Unknown error occurred while fetching recent URLs');
+  }
+};
+
+export const getUrlDetails = async (identifier: string): Promise<ExtractedUrlData> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/url/${identifier}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Failed to fetch URL details with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: ExtractUrlResponse = await response.json();
+    
+    if (!result.success || !result.data) {
+      throw new Error('Invalid response format from URL details API');
+    }
+
+    return result.data;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error fetching URL details: ${error.message}`);
+    }
+    throw new Error('Unknown error occurred while fetching URL details');
+  }
+};
