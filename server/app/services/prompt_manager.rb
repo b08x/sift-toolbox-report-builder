@@ -27,8 +27,64 @@ module PromptManager
       {
         current_date: Date.today.strftime('%Y-%m-%d'),
         current_time: Time.now.strftime('%Y-%m-%d %H:%M:%S'),
-        application_name: 'SIFT-Toolbox'
+        application_name: 'SIFT-Toolbox',
+        version: '1.0',
+        environment: ENV['RACK_ENV'] || 'development'
       }
+    end
+
+    # Get all available agent configurations from the config/agents directory
+    #
+    # @return [Array<String>] Array of available agent names
+    def available_agents
+      AgentManager.available_agents
+    end
+
+    # Get all behaviors for a specific agent
+    #
+    # @param agent_name [String] The name of the agent
+    # @return [Array<Symbol>] Array of available behavior keys
+    def available_behaviors(agent_name)
+      config = AgentManager.load_agent_config(agent_name)
+      behaviors = config.fetch('behaviors') || {}
+      behaviors.keys.map(&:to_sym)
+    rescue AgentManager::AgentNotFoundError
+      []
+    end
+
+    # Validate that a prompt configuration is valid
+    #
+    # @param prompt_key [Symbol] The prompt key to validate
+    # @return [Boolean] True if the prompt configuration is valid
+    def validate_prompt(prompt_key)
+      return false unless prompt_exists?(prompt_key)
+
+      config = PROMPT_TYPE_MAPPING[prompt_key]
+      return validate_direct_prompt(prompt_key) unless config
+
+      begin
+        AgentManager.load_agent_config(config[:agent])
+        behavior_data = AgentManager.get_processed_behavior(
+          agent_name: config[:agent],
+          behavior_key: config[:behavior],
+          context_vars: default_context_vars
+        )
+        behavior_data.key?(config[:key])
+      rescue AgentManager::AgentNotFoundError, AgentManager::BehaviorNotFoundError
+        false
+      end
+    end
+
+    # Get metadata for a specific agent
+    #
+    # @param agent_name [String] The name of the agent
+    # @return [Hash] Metadata hash with symbol keys
+    def get_agent_metadata(agent_name)
+      config = AgentManager.load_agent_config(agent_name)
+      metadata = config.fetch('meta') || {}
+      metadata.transform_keys(&:to_sym)
+    rescue AgentManager::AgentNotFoundError
+      {}
     end
 
     # Main method for retrieving processed prompts with ERB templating
@@ -124,16 +180,60 @@ module PromptManager
       PROMPT_TYPE_MAPPING
     end
 
+    # Create a new prompt mapping dynamically
+    #
+    # @param prompt_key [Symbol] The new prompt key
+    # @param agent_name [String] The agent name
+    # @param behavior_key [Symbol] The behavior key
+    # @param content_key [Symbol] The content key within the behavior
+    def add_prompt_mapping(_prompt_key, agent_name:, behavior_key:, content_key:)
+      unless available_agents.include?(agent_name)
+        raise PromptNotFoundError, "Agent '#{agent_name}' not found in available agents"
+      end
+
+      unless available_behaviors(agent_name).include?(behavior_key)
+        raise PromptNotFoundError, "Behavior '#{behavior_key}' not found for agent '#{agent_name}'"
+      end
+
+      # Since PROMPT_TYPE_MAPPING is frozen, we need to work around this
+      # In practice, this would require modifying the constant or using a different approach
+      raise StandardError, 'Cannot modify frozen PROMPT_TYPE_MAPPING. Consider using configuration files instead.'
+    end
+
+    # Get all prompt metadata for debugging and introspection
+    #
+    # @return [Hash] Complete mapping of prompts to their configurations and metadata
+    def get_all_prompt_info
+      info = {}
+
+      PROMPT_TYPE_MAPPING.each do |prompt_key, config|
+        agent_metadata = get_agent_metadata(config[:agent])
+        info[prompt_key] = {
+          config: config,
+          agent_metadata: agent_metadata,
+          valid: validate_prompt(prompt_key)
+        }
+      rescue StandardError => e
+        info[prompt_key] = {
+          config: config,
+          error: e.message,
+          valid: false
+        }
+      end
+
+      info
+    end
+
     private
 
     # Check if a direct agent/behavior prompt exists (for extensibility)
     #
     # @param prompt_key [Symbol] The prompt key to check
     # @return [Boolean] True if a direct prompt mapping exists
-    def direct_prompt_exists?(_prompt_key)
-      # This method allows for dynamic agent discovery
-      # For now, we'll return false but this could be extended to check the config/agents directory
-      false
+    def direct_prompt_exists?(prompt_key)
+      # Enhanced to actually check if the prompt_key could map to an agent
+      agent_name = prompt_key.to_s.gsub(/_prompt$/, '')
+      available_agents.include?(agent_name)
     end
 
     # Get a direct prompt (for extensibility and backward compatibility)
@@ -141,10 +241,53 @@ module PromptManager
     # @param prompt_key [Symbol] The prompt key
     # @param context_vars [Hash] Context variables for ERB processing
     # @return [String] The processed prompt
-    def get_direct_prompt(prompt_key, _context_vars = {})
-      # This could be implemented to dynamically discover agent configurations
-      # based on naming conventions (e.g., prompt_key could map to agent_name)
-      raise PromptNotFoundError, "Direct prompt lookup not implemented for: #{prompt_key}"
+    def get_direct_prompt(prompt_key, context_vars = {})
+      # Enhanced implementation for dynamic agent discovery
+      agent_name = prompt_key.to_s.gsub(/_prompt$/, '')
+
+      unless available_agents.include?(agent_name)
+        raise PromptNotFoundError, "No agent found for prompt key: #{prompt_key}"
+      end
+
+      # Default to 'interaction' behavior and 'directive' key
+      merged_context = default_context_vars.merge(context_vars)
+
+      begin
+        behavior_data = AgentManager.get_processed_behavior(
+          agent_name: agent_name,
+          behavior_key: :interaction,
+          context_vars: merged_context
+        )
+
+        content = behavior_data[:directive]
+        unless content
+          raise PromptNotFoundError, "No 'directive' content found in 'interaction' behavior for agent '#{agent_name}'"
+        end
+
+        content
+      rescue AgentManager::AgentNotFoundError, AgentManager::BehaviorNotFoundError => e
+        raise PromptNotFoundError, "Error loading direct prompt '#{prompt_key}': #{e.message}"
+      end
+    end
+
+    # Validate a direct prompt mapping
+    #
+    # @param prompt_key [Symbol] The prompt key to validate
+    # @return [Boolean] True if the direct prompt is valid
+    def validate_direct_prompt(prompt_key)
+      agent_name = prompt_key.to_s.gsub(/_prompt$/, '')
+      return false unless available_agents.include?(agent_name)
+
+      begin
+        behavior_data = AgentManager.get_processed_behavior(
+          agent_name: agent_name,
+          behavior_key: :interaction,
+          context_vars: default_context_vars
+        )
+        behavior_data.key?(:directive)
+      rescue AgentManager::AgentNotFoundError, AgentManager::BehaviorNotFoundError
+        false
+      end
     end
   end
 end

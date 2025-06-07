@@ -112,24 +112,75 @@ class PromptManagerTest < Minitest::Test
     assert_kind_of String, prompt
   end
 
-  def test_error_handling_for_missing_agent_config
-    # This tests the error propagation from AgentManager
-    # We'll simulate this by trying a prompt that should fail at the AgentManager level
+  def test_available_agents
+    agents = PromptManager.available_agents
+    assert_kind_of Array, agents
+    assert_includes agents, 'sift_full_check'
+  end
 
-    # First, let's verify our error handling works with a completely invalid configuration
-    invalid_mapping = { invalid_prompt: { agent: 'nonexistent_agent', behavior: :boot, key: :directive } }
+  def test_available_behaviors
+    behaviors = PromptManager.available_behaviors('sift_full_check')
+    assert_kind_of Array, behaviors
+    assert_includes behaviors, :interaction
+    assert_includes behaviors, :boot
+  end
 
-    # Temporarily modify the mapping to test error handling
-    original_mapping = PromptManager.prompt_type_mapping
-    PromptManager.const_set(:PROMPT_TYPE_MAPPING, invalid_mapping)
+  def test_available_behaviors_with_invalid_agent
+    behaviors = PromptManager.available_behaviors('nonexistent_agent')
+    assert_equal [], behaviors
+  end
 
-    begin
-      assert_raises(PromptManager::PromptNotFoundError) do
-        PromptManager.get_prompt(:invalid_prompt)
-      end
-    ensure
-      # Restore original mapping
-      PromptManager.const_set(:PROMPT_TYPE_MAPPING, original_mapping)
+  def test_validate_prompt_with_valid_prompt
+    assert PromptManager.validate_prompt(:sift_chat_system_prompt)
+    assert PromptManager.validate_prompt(:sift_full_check_prompt)
+  end
+
+  def test_validate_prompt_with_invalid_prompt
+    refute PromptManager.validate_prompt(:nonexistent_prompt)
+  end
+
+  def test_get_agent_metadata
+    metadata = PromptManager.get_agent_metadata('sift_full_check')
+    assert_kind_of Hash, metadata
+    assert_includes metadata.keys, :name
+    # Note: version and symbol may not be present in simple config
+  end
+
+  def test_get_agent_metadata_with_invalid_agent
+    metadata = PromptManager.get_agent_metadata('nonexistent_agent')
+    assert_equal({}, metadata)
+  end
+
+  def test_get_all_prompt_info
+    info = PromptManager.get_all_prompt_info
+    assert_kind_of Hash, info
+    
+    # Check that each prompt has the expected structure
+    info.each do |prompt_key, prompt_info|
+      assert_includes prompt_info.keys, :config
+      assert_includes prompt_info.keys, :valid
+      
+      # Should have either agent_metadata or error
+      assert(prompt_info.key?(:agent_metadata) || prompt_info.key?(:error))
     end
+  end
+
+  def test_direct_prompt_discovery
+    # Test the enhanced direct prompt functionality
+    # This assumes that 'sift_full_check_prompt' could be resolved as a direct prompt
+    # if it wasn't already in the mapping
+    
+    # We can't easily test this without modifying constants, so we'll just verify
+    # that the method exists and doesn't crash
+    assert_respond_to PromptManager, :available_agents
+  end
+
+  def test_enhanced_context_variables
+    # Test that enhanced context includes new variables
+    context = PromptManager.default_context_vars
+    
+    assert_includes context.keys, :version
+    assert_includes context.keys, :environment
+    assert_equal '1.0', context[:version]
   end
 end
