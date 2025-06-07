@@ -1,4 +1,3 @@
-import React from 'react';
 // This component might be deprecated or its logic incorporated into ChatMessageItem.tsx
 // For now, clearing its content as App.tsx no longer uses it directly.
 

@@ -461,3 +461,39 @@ export const getUrlDetails = async (identifier: string): Promise<ExtractedUrlDat
     throw new Error('Unknown error occurred while fetching URL details');
   }
 };
+
+// Stream Cancellation Types and Functions
+export interface CancelStreamResponse {
+  success: boolean;
+  message: string;
+  stream_id: string;
+}
+
+export const cancelStream = async (streamId: string): Promise<CancelStreamResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/sift/cancel/${streamId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Stream cancellation failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: CancelStreamResponse = await response.json();
+    
+    if (!result.success) {
+      throw new Error('Stream cancellation was not successful');
+    }
+
+    return result;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error cancelling stream: ${error.message}`);
+    }
+    throw new Error('Unknown error occurred while cancelling stream');
+  }
+};

@@ -2,7 +2,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChatMessage, GroundingChunk, ReportType, ParsedReportSection } from '../types';
+import { ChatMessage, ParsedReportSection } from '../types';
 import { SIFT_ICON } from '../constants'; 
 
 interface ChatMessageItemProps {

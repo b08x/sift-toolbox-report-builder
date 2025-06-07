@@ -32,7 +32,9 @@ describe 'URL Extraction Service' do
     end
 
     it 'raises error for invalid URLs' do
-      _(proc { URLExtractionService.send(:normalize_url, 'not a url') }).must_raise URLExtractionService::ExtractionError
+      _(proc {
+        URLExtractionService.send(:normalize_url, 'not a url')
+      }).must_raise URLExtractionService::ExtractionError
     end
 
     it 'raises error for URLs without host' do
@@ -44,7 +46,7 @@ describe 'URL Extraction Service' do
     it 'extracts title from HTML' do
       html = '<html><head><title>Test Title</title></head><body><p>Content goes here</p></body></html>'
       result = URLExtractionService.send(:parse_html_content, html)
-      
+
       _(result[:title]).must_equal 'Test Title'
       _(result[:content]).wont_be_nil
       _(result[:content]).must_include 'Content goes here'
@@ -53,14 +55,14 @@ describe 'URL Extraction Service' do
     it 'extracts title from meta og:title' do
       html = '<html><head><meta property="og:title" content="OG Title" /><title>Regular Title</title></head><body><p>Content goes here for testing</p></body></html>'
       result = URLExtractionService.send(:parse_html_content, html)
-      
+
       _(result[:title]).must_equal 'OG Title'
     end
 
     it 'removes scripts and styles' do
       html = '<html><body><p>Good content goes here</p><script>alert("bad")</script><style>.bad{}</style></body></html>'
       result = URLExtractionService.send(:parse_html_content, html)
-      
+
       _(result[:content]).wont_be_nil
       _(result[:content]).must_include 'Good content goes here'
       _(result[:content]).wont_include 'alert'
@@ -70,7 +72,7 @@ describe 'URL Extraction Service' do
     it 'extracts content from article elements' do
       html = '<html><body><article><p>Article content goes here for testing</p></article><aside>Sidebar</aside></body></html>'
       result = URLExtractionService.send(:parse_html_content, html)
-      
+
       _(result[:content]).wont_be_nil
       _(result[:content]).must_include 'Article content goes here for testing'
     end
@@ -78,30 +80,30 @@ describe 'URL Extraction Service' do
     it 'calculates word count correctly' do
       html = '<html><body><p>This is a test with exactly eight words here.</p></body></html>'
       result = URLExtractionService.send(:parse_html_content, html)
-      
+
       _(result[:word_count]).must_equal 9 # "This is a test with exactly eight words here"
     end
   end
 
   describe 'content cleaning' do
     it 'normalizes whitespace' do
-      content = "This   has    excessive    spacing"
+      content = 'This   has    excessive    spacing'
       cleaned = URLExtractionService.send(:clean_content, content)
-      
+
       _(cleaned).must_equal 'This has excessive spacing'
     end
 
     it 'returns nil for very short content' do
-      short_content = 'Short'  # Less than 10 characters
+      short_content = 'Short' # Less than 10 characters
       cleaned = URLExtractionService.send(:clean_content, short_content)
-      
+
       _(cleaned).must_be_nil
     end
 
     it 'preserves paragraph breaks' do
       content = "First paragraph.\n\nSecond paragraph."
       cleaned = URLExtractionService.send(:clean_content, content)
-      
+
       _(cleaned).must_include "First paragraph.\n\nSecond paragraph."
     end
   end
@@ -112,7 +114,7 @@ describe 'URL Extraction Service' do
 
       # Mock successful extraction
       url = 'https://test-example.com/article'
-      
+
       # Create a ProcessedUrl record directly to test deduplication
       existing = ProcessedUrl.create_from_url(
         original_url: url,
@@ -166,7 +168,7 @@ describe 'URL Extraction Service' do
       skip 'Skipping database tests - no DB connection' unless DB
 
       url = 'https://test-example.com/updated'
-      
+
       # Create initial record
       existing = ProcessedUrl.create_from_url(
         original_url: url,
@@ -192,14 +194,14 @@ describe 'URL Extraction Service' do
 
   describe 'error handling' do
     it 'raises NetworkError for invalid hosts' do
-      _(proc { 
-        URLExtractionService.send(:fetch_html, 'https://this-domain-does-not-exist-12345.com', 5, 1000000)
+      _(proc {
+        URLExtractionService.send(:fetch_html, 'https://this-domain-does-not-exist-12345.com', 5, 1_000_000)
       }).must_raise URLExtractionService::NetworkError
     end
 
     it 'raises NetworkError for timeouts' do
-      _(proc { 
-        URLExtractionService.send(:fetch_html, 'https://httpbin.org/delay/10', 1, 1000000)
+      _(proc {
+        URLExtractionService.send(:fetch_html, 'https://httpbin.org/delay/10', 1, 1_000_000)
       }).must_raise URLExtractionService::NetworkError
     end
 

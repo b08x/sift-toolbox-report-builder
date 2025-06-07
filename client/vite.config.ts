@@ -2,9 +2,12 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  loadEnv(mode, process.cwd(), '');
   
   return {
+    // Set the correct public directory
+    publicDir: 'public',
+    
     // Define global constants that can be used at runtime
     define: {
       // Preserve the placeholder for Docker runtime replacement

@@ -27,7 +27,7 @@ class PromptManagerEnhancedTest < Minitest::Test
   def test_validate_prompt
     # Test with existing prompt
     assert PromptManager.validate_prompt(:sift_chat_system_prompt)
-    
+
     # Test with non-existent prompt
     refute PromptManager.validate_prompt(:nonexistent_prompt)
   end
@@ -37,10 +37,10 @@ class PromptManagerEnhancedTest < Minitest::Test
     refute_nil prompt
     assert_kind_of String, prompt
     assert prompt.length > 0
-    
+
     # Test with user query
-    prompt_with_query = PromptManager.get_sift_chat_system_prompt(user_query: "Test query")
-    assert_includes prompt_with_query, "Test query"
+    prompt_with_query = PromptManager.get_sift_chat_system_prompt(user_query: 'Test query')
+    assert_includes prompt_with_query, 'Test query'
   end
 
   def test_get_sift_analysis_prompt_full_check
@@ -105,7 +105,7 @@ class PromptManagerEnhancedTest < Minitest::Test
     assert_includes context.keys, :application_name
     assert_includes context.keys, :sift_version
     assert_includes context.keys, :methodology
-    
+
     # Test date formatting
     assert_match(/\d{4}-\d{2}-\d{2}/, context[:current_date])
     assert_equal 'SIFT-Toolbox', context[:application_name]
@@ -131,7 +131,7 @@ class PromptManagerEnhancedTest < Minitest::Test
     assert_kind_of Hash, info
     assert_includes info.keys, :sift_chat_system_prompt
     assert_includes info.keys, :sift_full_check_prompt
-    
+
     # Each prompt should have config and validity info
     info.each_value do |prompt_info|
       assert_includes prompt_info.keys, :config
@@ -142,10 +142,10 @@ class PromptManagerEnhancedTest < Minitest::Test
   def test_erb_template_processing
     # Test that ERB variables are properly substituted
     prompt = PromptManager.get_sift_chat_system_prompt
-    
+
     # Should contain processed date
     assert_match(/\d{4}-\d{2}-\d{2}/, prompt)
-    
+
     # Should not contain ERB tags
     refute_includes prompt, '<%'
     refute_includes prompt, '%>'
@@ -157,13 +157,13 @@ class PromptManagerEnhancedTest < Minitest::Test
       report_type: 'CUSTOM',
       custom_var: 'Custom value'
     }
-    
+
     prompt = PromptManager.get_sift_analysis_prompt(
       report_type: 'FULL_CHECK',
       user_input: custom_context[:user_input],
       **custom_context
     )
-    
+
     assert_includes prompt, 'Custom test input'
   end
 
@@ -200,15 +200,15 @@ class PromptManagerEnhancedTest < Minitest::Test
 
   def test_template_helpers
     context = PromptManager.default_context_vars
-    
+
     # Test confidence formatter
     confidence_formatter = context[:format_confidence]
-    assert_equal "4/5", confidence_formatter.call(4)
-    
-    # Test status formatter  
+    assert_equal '4/5', confidence_formatter.call(4)
+
+    # Test status formatter
     status_formatter = context[:format_status]
-    assert_equal "✅", status_formatter.call('verified')
-    assert_equal "❌", status_formatter.call('error')
-    assert_equal "❓", status_formatter.call('unknown')
+    assert_equal '✅', status_formatter.call('verified')
+    assert_equal '❌', status_formatter.call('error')
+    assert_equal '❓', status_formatter.call('unknown')
   end
 end

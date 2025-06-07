@@ -19,7 +19,7 @@ import {
   CurrentSiftQueryDetails
 } from './types';
 // Prompts are now handled by the backend
-import { initiateSiftAnalysis, fetchModelConfigurations, sendChatMessage } from './services/apiClient';
+import { initiateSiftAnalysis, fetchModelConfigurations, sendChatMessage, cancelStream } from './services/apiClient';
 
 // Helper function to update the last AI message that is currently loading
 const updateLastLoadingAiMessage = (
@@ -55,6 +55,7 @@ const updateLastLoadingAiMessage = (
 
 const App: React.FC = () => {
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
+  const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
   const [userInputText, setUserInputText] = useState<string>('');
   const [userImageFile, setUserImageFile] = useState<File | null>(null);
   const [reportType, setReportType] = useState<ReportType>(ReportType.FULL_CHECK);
@@ -179,26 +180,6 @@ const App: React.FC = () => {
     setModelConfigParams(prev => ({ ...prev, [key]: value }));
   };
   
-  const handleToggleGeminiPreprocessing = (enabled: boolean) => {
-    // setEnableGeminiPreprocessing(enabled); // Removed as backend handles preprocessing
-    handleClearChatAndReset(false); // Clear chat when this mode changes
-  };
-
-
-  const getSystemPromptForSelectedModel = (): string => {
-    const modelConfig = getSelectedModelConfig();
-    let basePrompt = 'You are a SIFT (Stop, Investigate, Find, Trace) methodology assistant. You help users fact-check claims, understand context, and analyze information.'; // Default SIFT chat prompt
-
-    if (modelConfig?.provider === AIProvider.OPENAI || modelConfig?.provider === AIProvider.OPENROUTER) {
-        // OpenAI/OpenRouter might benefit from a slightly more direct system prompt for chat
-        basePrompt = `You are a SIFT (Stop, Investigate, Find, Trace) methodology assistant. You help users fact-check claims, understand context, and analyze information. Follow instructions for specific report types when requested. Provide structured, well-cited responses. Ensure all tables are in Markdown format.`;
-    }
-    
-    if (modelConfig?.defaultSystemPrompt) {
-        basePrompt = modelConfig.defaultSystemPrompt;
-    }
-    return basePrompt;
-  }
 
 
   // Removed fileToGenerativePart (lines 258-270) as it's no longer needed for frontend SDKs.
@@ -326,6 +307,12 @@ const App: React.FC = () => {
         modelConfigParams: modelConfigParams
       });
       setCurrentStreamUrl(streamUrl); // Store the stream URL from the API response.
+      
+      // Extract stream ID from URL for cancellation purposes
+      const urlParts = streamUrl.split('/');
+      const streamId = urlParts[urlParts.length - 1];
+      setCurrentStreamId(streamId);
+      
       setIsLoading(false); // Set loading to false; SSE handler will update the AI message.
       // The AI message placeholder (already added) will be updated by an SSE handler (to be implemented elsewhere).
 
@@ -341,7 +328,7 @@ const App: React.FC = () => {
     // abortControllerRef is no longer managed directly within this core path.
   };
 
-  const handleSendChatMessage = async (messageText: string, command?: 'another round' | 'read the room') => {
+  const handleSendChatMessage = async (messageText: string) => {
     if (!isChatActive || isLoading) return;
     setError(null);
     setIsLoading(true);
@@ -484,11 +471,25 @@ const App: React.FC = () => {
     }
   };
   
-  const handleStopGeneration = () => {
+  const handleStopGeneration = async () => {
+    // Cancel on backend if we have a stream ID
+    if (currentStreamId) {
+      try {
+        console.log('Attempting to cancel stream:', currentStreamId);
+        await cancelStream(currentStreamId);
+        console.log('Stream cancellation request sent successfully');
+      } catch (error) {
+        console.error('Failed to send cancellation request:', error);
+        // Continue with client-side cancellation even if backend call fails
+      }
+    }
+
+    // Cancel on client side
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    
     setIsLoading(false);
     // Update any message that was isLoading to show "stopped by user"
     setChatMessages(prevMessages => 
@@ -529,6 +530,8 @@ const App: React.FC = () => {
     // setCurrentChat(null); // Removed
     // setCurrentOpenAIChatHistory([]); // Removed
     setCurrentStreamUrl(null); // Reset the stream URL
+    setCurrentStreamId(null); // Reset the stream ID
+    setCurrentAnalysisId(null); // Reset analysis ID
     setIsChatActive(false);
     setIsLoading(false);
     setError(null);
@@ -643,6 +646,22 @@ const App: React.FC = () => {
         setCurrentStreamUrl(null);
       });
 
+      eventSource.addEventListener('analysis_id', (event) => {
+        console.log('SSE: Received analysis_id event:', event);
+        
+        if (event instanceof MessageEvent && event.data) {
+          try {
+            const parsedData = JSON.parse(event.data);
+            if (parsedData.analysis_id) {
+              console.log('SSE: Setting analysis_id:', parsedData.analysis_id);
+              setCurrentAnalysisId(parsedData.analysis_id);
+            }
+          } catch (e) {
+            console.error('SSE: Failed to parse analysis_id event data:', e, event.data);
+          }
+        }
+      });
+
       eventSource.addEventListener('complete', (event) => {
         console.log('SSE: Received stream complete event:', event);
         // Optionally, parse event.data if the backend sends any final message or metadata with 'complete'.
@@ -656,6 +675,7 @@ const App: React.FC = () => {
           eventSource.close();
         }
         setCurrentStreamUrl(null); // Clean up URL
+        setCurrentStreamId(null); // Clean up stream ID
       });
     }
 

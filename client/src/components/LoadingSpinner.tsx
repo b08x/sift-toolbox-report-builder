@@ -9,7 +9,7 @@ interface LoadingSpinnerProps {
   // but they are defined to match the props passed in App.tsx
 }
 
-export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ reportType, onTimeout }) => {
+export const LoadingSpinner: React.FC<LoadingSpinnerProps> = () => {
   // TODO: Optionally use reportType to customize the message, e.g., "Generating {reportType} Report..."
   // TODO: Implement timeout logic using onTimeout if needed, though App.tsx seems to handle it externally.
   return (

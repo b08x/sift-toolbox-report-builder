@@ -143,7 +143,7 @@ class PromptManagerTest < Minitest::Test
     metadata = PromptManager.get_agent_metadata('sift_full_check')
     assert_kind_of Hash, metadata
     assert_includes metadata.keys, :name
-    # Note: version and symbol may not be present in simple config
+    # NOTE: version and symbol may not be present in simple config
   end
 
   def test_get_agent_metadata_with_invalid_agent
@@ -154,12 +154,12 @@ class PromptManagerTest < Minitest::Test
   def test_get_all_prompt_info
     info = PromptManager.get_all_prompt_info
     assert_kind_of Hash, info
-    
+
     # Check that each prompt has the expected structure
-    info.each do |prompt_key, prompt_info|
+    info.each do |_prompt_key, prompt_info|
       assert_includes prompt_info.keys, :config
       assert_includes prompt_info.keys, :valid
-      
+
       # Should have either agent_metadata or error
       assert(prompt_info.key?(:agent_metadata) || prompt_info.key?(:error))
     end
@@ -169,7 +169,7 @@ class PromptManagerTest < Minitest::Test
     # Test the enhanced direct prompt functionality
     # This assumes that 'sift_full_check_prompt' could be resolved as a direct prompt
     # if it wasn't already in the mapping
-    
+
     # We can't easily test this without modifying constants, so we'll just verify
     # that the method exists and doesn't crash
     assert_respond_to PromptManager, :available_agents
@@ -178,7 +178,7 @@ class PromptManagerTest < Minitest::Test
   def test_enhanced_context_variables
     # Test that enhanced context includes new variables
     context = PromptManager.default_context_vars
-    
+
     assert_includes context.keys, :version
     assert_includes context.keys, :environment
     assert_equal '1.0', context[:version]

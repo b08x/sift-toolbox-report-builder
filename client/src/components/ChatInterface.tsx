@@ -1,12 +1,12 @@
 
-import React, { useRef, useEffect, forwardRef } from 'react';
+import { useRef, useEffect, forwardRef } from 'react';
 import { ChatMessage } from '../types';
 import { ChatMessageItem } from './ChatMessageItem';
 import { ChatInputArea } from './ChatInputArea';
 
 interface ChatInterfaceProps {
   messages: ChatMessage[];
-  onSendMessage: (messageText: string, command?: 'another round' | 'read the room') => void;
+  onSendMessage: (messageText: string) => void;
   isLoading: boolean;
   onStopGeneration?: () => void;
   onRestartGeneration?: () => void; // New prop for restarting

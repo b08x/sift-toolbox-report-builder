@@ -58,8 +58,6 @@ class SSEStreamingDemo
     puts '=== Demo Complete ==='
   end
 
-  private
-
   def self.format_sse_data(data)
     "data: #{data.to_json}\n\n"
   end

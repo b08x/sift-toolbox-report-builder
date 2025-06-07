@@ -138,7 +138,7 @@ end
 helpers do
   def send_sse_event(out, event_type, data)
     return if out.closed?
-    
+
     sse_message = case event_type
                   when :data
                     "data: #{data.to_json}\n\n"
@@ -147,7 +147,7 @@ helpers do
                   else
                     "#{event_type}: #{data}\n\n"
                   end
-    
+
     out << sse_message
     out.flush if out.respond_to?(:flush) # Ensure immediate transmission
   rescue StandardError => e
@@ -421,7 +421,7 @@ post '/api/sift/initiate' do
               settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
             end
           end
-          
+
           # Send analysis_id if available for follow-up messages
           if result && result[:persistence_result] && result[:persistence_result][:analysis_id]
             analysis_id = result[:persistence_result][:analysis_id]
@@ -463,7 +463,7 @@ post '/api/sift/initiate' do
             settings.logger.debug("Received empty or unexpected content from AIService: '#{content_or_event}' - not sending.")
           end
         end
-        
+
         # Send analysis_id if available for follow-up messages
         if result && result[:persistence_result] && result[:persistence_result][:analysis_id]
           analysis_id = result[:persistence_result][:analysis_id]
@@ -485,12 +485,14 @@ post '/api/sift/initiate' do
     rescue RubyLLM::Error => e
       settings.logger.error("RubyLLM::Error in /api/sift/initiate: #{e.message} - Details: #{e.try(:response)&.body}")
       unless out.closed?
-        send_sse_event(out, :event, { event: 'error', data: { type: e.class.name, message: e.message, details: e.try(:response)&.body } })
+        send_sse_event(out, :event,
+                       { event: 'error', data: { type: e.class.name, message: e.message, details: e.try(:response)&.body } })
       end
     rescue StandardError => e
       settings.logger.error("Error in /api/sift/initiate: #{e.message}\n#{e.backtrace.join("\n")}")
       unless out.closed?
-        send_sse_event(out, :event, { event: 'error', data: { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" } })
+        send_sse_event(out, :event,
+                       { event: 'error', data: { type: 'StreamingError', message: "An error occurred while processing your request: #{e.message}" } })
       end
     ensure
       settings.logger.info("Closing stream for /api/sift/initiate for client: #{request.ip}")
@@ -573,7 +575,8 @@ post '/api/sift/chat' do
         # This is a server configuration error, so we might not be able to send an SSE error gracefully.
         # However, we try.
         unless out.closed?
-          send_sse_event(out, :event, { event: 'error', data: { type: 'ServerError', message: 'AIService is not available. Configuration issue.' } })
+          send_sse_event(out, :event,
+                         { event: 'error', data: { type: 'ServerError', message: 'AIService is not available. Configuration issue.' } })
         end
         next # or break, as the stream cannot proceed
       end
@@ -617,13 +620,45 @@ post '/api/sift/chat' do
       settings.logger.error "Error during SSE streaming or AIService.continue_sift_chat execution: #{e.class.name} - #{e.message}"
       settings.logger.error e.backtrace.join("\n")
       unless out.closed?
-        send_sse_event(out, :event, { event: 'error', data: { type: 'StreamingError', message: "An error occurred: #{e.message}" } })
+        send_sse_event(out, :event,
+                       { event: 'error', data: { type: 'StreamingError', message: "An error occurred: #{e.message}" } })
       end
     ensure
       settings.logger.info "SSE stream ensure block reached for /api/sift/chat. Closing stream for client: #{request.ip}"
       # Sinatra's stream(:keep_open) handles closing the stream when the block exits.
     end
     settings.logger.info "SSE stream block finished for /api/sift/chat for client: #{request.ip}"
+  end
+end
+
+# Stream cancellation endpoint
+post '/api/sift/cancel/:stream_id' do
+  stream_id = params[:stream_id]
+  settings.logger.info "POST /api/sift/cancel/#{stream_id} - Received cancellation request from #{request.ip}"
+  content_type :json
+
+  begin
+    # For now, we'll implement a simple response
+    # In the future, this could interact with a stream registry
+    # The frontend can use the abort controller to actually cancel the connection
+
+    settings.logger.info "Cancellation requested for stream: #{stream_id}"
+
+    {
+      success: true,
+      message: "Cancellation signal sent for stream: #{stream_id}",
+      stream_id: stream_id
+    }.to_json
+  rescue StandardError => e
+    settings.logger.error "Error processing cancellation request for stream #{stream_id}: #{e.message}"
+    status 500
+    {
+      success: false,
+      error: {
+        type: 'CancellationError',
+        message: "Failed to process cancellation: #{e.message}"
+      }
+    }.to_json
   end
 end
 
@@ -634,7 +669,7 @@ end
 
 # Get recent SIFT analyses (list view)
 get '/api/sift/analyses' do
-  settings.logger.info "GET /api/sift/analyses - Retrieving recent analyses"
+  settings.logger.info 'GET /api/sift/analyses - Retrieving recent analyses'
   content_type :json
 
   begin
